@@ -1,12 +1,12 @@
 ---
 name: code-review
-description: End-to-end senior code review for .NET microservices and libraries (style, correctness, performance/low-GC/AOT, security, database/EF Core/PostgreSQL, messaging/RabbitMQ, logging/observability). Use when reviewing PRs, diffs, branches, or when asked to improve code quality and production readiness.
+description: Use when reviewing PRs/diffs/branches for .NET quality, correctness, performance, security, data access, messaging, and observability. Triggers: code review, review PR, review diff, production readiness, low GC, AOT, security review.
 license: MIT
 compatibility: Requires git and bash (Linux/macOS) or PowerShell (Windows). Works with any AI agent that supports the Agent Skills specification and has file read and command execution tools.
 metadata:
   author: Hristo Georgiev
   organization: Wizer Technologies
-  version: "2.0"
+  version: "1.2.0"
 ---
 
 # End-to-end Code Review (Style + Perf + Security + DB + Messaging + Logging)

@@ -11,13 +11,49 @@
       "id": "dotnet-techne-inspect",
       "name": "dotnet-inspect",
       "path": "skills/dotnet-techne-inspect/SKILL.md",
-      "description": "Inspect .NET NuGet package APIs and decompile type signatures."
+      "description": "Use when inspecting NuGet APIs, listing public types, or decompiling method signatures."
     },
     {
       "id": "dotnet-techne-code-review",
       "name": "code-review",
       "path": "skills/dotnet-techne-code-review/SKILL.md",
-      "description": "End-to-end code review for .NET microservices and libraries."
+      "description": "Use for PR/diff/branch .NET reviews: correctness, performance, security, data, messaging, observability."
+    },
+    {
+      "id": "dotnet-techne-crap-analysis",
+      "name": "dotnet-techne-crap-analysis",
+      "path": "skills/dotnet-techne-crap-analysis/SKILL.md",
+      "description": "Use for CRAP score, complexity, and coverage hotspot analysis to prioritise risk reduction."
+    },
+    {
+      "id": "dotnet-techne-csharp-api-design",
+      "name": "dotnet-techne-csharp-api-design",
+      "path": "skills/dotnet-techne-csharp-api-design/SKILL.md",
+      "description": "Use for public API design changes requiring compatibility-safe versioning and deprecation strategy."
+    },
+    {
+      "id": "dotnet-techne-csharp-coding-standards",
+      "name": "dotnet-techne-csharp-coding-standards",
+      "path": "skills/dotnet-techne-csharp-coding-standards/SKILL.md",
+      "description": "Use for modern C# coding standards, refactoring guidance, and maintainable performance-focused code."
+    },
+    {
+      "id": "dotnet-techne-csharp-concurrency-patterns",
+      "name": "dotnet-techne-csharp-concurrency-patterns",
+      "path": "skills/dotnet-techne-csharp-concurrency-patterns/SKILL.md",
+      "description": "Use for choosing async/channels/dataflow/Rx patterns and avoiding lock-heavy concurrency bugs."
+    },
+    {
+      "id": "dotnet-techne-csharp-type-design-performance",
+      "name": "dotnet-techne-csharp-type-design-performance",
+      "path": "skills/dotnet-techne-csharp-type-design-performance/SKILL.md",
+      "description": "Use for type/collection choices on hot paths: readonly structs, sealed types, spans, frozen collections."
+    },
+    {
+      "id": "dotnet-techne-serialisation",
+      "name": "dotnet-techne-serialisation",
+      "path": "skills/dotnet-techne-serialisation/SKILL.md",
+      "description": "Use for serialisation format and contract decisions across APIs, messaging, and persistence."
     }
   ],
   "agents": []

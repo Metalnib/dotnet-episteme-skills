@@ -1,12 +1,12 @@
 ---
 name: dotnet-inspect
-description: Inspect .NET NuGet package APIs — list public types, decompile interfaces/classes, view method signatures and properties. Uses dotnet-inspect (preferred, .NET 10+) or ilspycmd (fallback, .NET 8+).
+description: Use when you need to inspect NuGet package APIs, list public types, or decompile method/property signatures. Triggers: inspect package API, list types, decompile type, method signatures, NuGet interface.
 license: MIT
 compatibility: Requires dotnet-inspect OR ilspycmd global tool. Works with bash (Linux/macOS) or PowerShell (Windows).
 metadata:
   author: Hristo Georgiev
   organization: Wizer Technologies
-  version: "1.0"
+  version: "1.2.0"
 ---
 
 # .NET NuGet Package Inspector
