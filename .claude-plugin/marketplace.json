@@ -1,0 +1,17 @@
+{
+  "name": "dotnet-episteme-marketplace",
+  "description": "DotNet Episteme Skills marketplace source for practical, production-tested .NET AI skills.",
+  "owner": {
+    "name": "Metalnib",
+    "url": "https://github.com/Metalnib"
+  },
+  "repository": "https://github.com/Metalnib/dotnet-episteme-skills",
+  "plugins": [
+    {
+      "name": "dotnet-episteme-skills",
+      "source": "./",
+      "version": "1.2.0",
+      "description": "Practical, production-tested .NET skills covering review, API design, coding standards, concurrency, type performance, and serialisation."
+    }
+  ]
+}

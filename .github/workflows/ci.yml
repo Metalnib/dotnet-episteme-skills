@@ -17,6 +17,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run validate.sh
         run: bash scripts/validate.sh
+      - name: Run validate-marketplace.sh
+        run: bash scripts/validate-marketplace.sh
 
   shellcheck:
     name: Shell Script Lint

@@ -1,6 +1,6 @@
 # DotNet Epistēmē Skills
-Manual-first .NET skills repository for AI coding tools.
-These skills follow the Agent Skills model (`SKILL.md` per skill folder) and are designed to work across multiple tools.
+Production-tested .NET skills repository for AI coding tools.
+These skills provide practical, real-world, enterprise-proven instructions that help AI agents implement, review, and improve .NET systems with production readiness in mind.
 
 ## What kind of skills are provided?
 ### Code review and risk analysis
@@ -74,6 +74,31 @@ Each skill is configured to be invocable by both model and user:
 
 `metadata.trigger_keywords` is included as extra routing context. Tools that do not support it can safely ignore it.
 
+## Phase 2: CI publishing
+Phase 2 adds tag-driven publishing inspired by `aaron-dotnet-skills`:
+- validates plugin and skill registry
+- validates marketplace metadata alignment
+- creates a GitHub release with a packaged archive
+
+### Release workflow trigger
+- workflow file: `.github/workflows/release.yml`
+- trigger: push tag `v*` (example: `v1.2.0`)
+
+### Before releasing
+1. Update version in `.claude-plugin/plugin.json`
+2. Set matching version in `.claude-plugin/marketplace.json` (`plugins[0].version`)
+3. Run local validation:
+```bash
+bash scripts/validate.sh
+bash scripts/validate-marketplace.sh
+```
+
+### Publish a release
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
 ## Update
 ```bash
 git -C ~/.local/share/dotnet-episteme-skills pull
@@ -84,6 +109,7 @@ If you used copy-based install, copy updated skill folders again to your tool di
 ## Validate repository
 ```bash
 bash scripts/validate.sh
+bash scripts/validate-marketplace.sh
 ```
 
 ## Specification and docs references

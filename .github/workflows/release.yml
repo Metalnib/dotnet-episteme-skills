@@ -1,0 +1,82 @@
+name: Phase 2 — Validate & Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate registry and marketplace
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate plugin and skills
+        run: bash scripts/validate.sh
+      - name: Validate marketplace metadata
+        run: bash scripts/validate-marketplace.sh
+
+  publish:
+    name: Publish GitHub release artifact
+    needs: validate
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag/version alignment
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PLUGIN_VERSION="$(jq -r '.version' .claude-plugin/plugin.json)"
+          MARKETPLACE_VERSION="$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json)"
+
+          if [ "$TAG_VERSION" != "$PLUGIN_VERSION" ]; then
+            echo "ERROR: tag version ($TAG_VERSION) does not match plugin version ($PLUGIN_VERSION)"
+            exit 1
+          fi
+
+          if [ "$PLUGIN_VERSION" != "$MARKETPLACE_VERSION" ]; then
+            echo "ERROR: plugin version ($PLUGIN_VERSION) does not match marketplace version ($MARKETPLACE_VERSION)"
+            exit 1
+          fi
+
+      - name: Build release archive
+        run: |
+          VERSION="$(jq -r '.version' .claude-plugin/plugin.json)"
+          SKILL_COUNT="$(jq '.skills | length' .claude-plugin/plugin.json)"
+          ARCHIVE="dotnet-episteme-skills-${VERSION}.tar.gz"
+
+          tar -czf "$ARCHIVE" .claude-plugin skills scripts README.md
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+          echo "SKILL_COUNT=$SKILL_COUNT" >> "$GITHUB_ENV"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: Generate release notes
+        run: |
+          cat > notes.md <<EOF
+          ## DotNet Episteme Skills ${VERSION}
+
+          Phase 2 publish pipeline release.
+
+          - Skills included: ${SKILL_COUNT}
+          - Plugin version: ${VERSION}
+          - Registry: .claude-plugin/plugin.json
+          - Marketplace metadata: .claude-plugin/marketplace.json
+
+          ### Manual install
+          Follow the README instructions for Claude Code, OpenCode, or any Agent Skills-compatible tool.
+          EOF
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          files: ${{ env.ARCHIVE }}
