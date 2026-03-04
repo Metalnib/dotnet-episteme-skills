@@ -1,0 +1,24 @@
+{
+  "name": "dotnet-episteme-skills",
+  "display_name": "DotNet Epistēmē Skills",
+  "description": "Manual-first .NET skills for AI-assisted development.",
+  "version": "1.2.0",
+  "license": "MIT",
+  "repository": "https://github.com/Metalnib/dotnet-episteme-skills",
+  "skill_prefix": "dotnet-techne-",
+  "skills": [
+    {
+      "id": "dotnet-techne-inspect",
+      "name": "dotnet-inspect",
+      "path": "skills/dotnet-techne-inspect/SKILL.md",
+      "description": "Inspect .NET NuGet package APIs and decompile type signatures."
+    },
+    {
+      "id": "dotnet-techne-code-review",
+      "name": "code-review",
+      "path": "skills/dotnet-techne-code-review/SKILL.md",
+      "description": "End-to-end code review for .NET microservices and libraries."
+    }
+  ],
+  "agents": []
+}
