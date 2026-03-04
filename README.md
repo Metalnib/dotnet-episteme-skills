@@ -24,7 +24,29 @@ These skills provide practical, real-world, enterprise-proven instructions that 
 - Every skill has a `SKILL.md` entrypoint.
 - Some skills include companion docs and scripts; keep the whole folder together when installing manually.
 
-## Manual installation (AI tool of your choice)
+## Install via Claude marketplace (recommended for Claude Code)
+Add this repository as a marketplace:
+```text
+/plugin marketplace add Metalnib/dotnet-episteme-skills
+```
+
+Then install the plugin:
+```text
+/plugin
+```
+Use **Browse Plugins** and install `dotnet-episteme-skills`.
+
+Direct command install (if you prefer CLI commands):
+1. Run `/plugin marketplace list`
+2. Note the marketplace name shown by Claude
+3. Install:
+```text
+/plugin install dotnet-episteme-skills@<marketplace-name>
+```
+
+After installation, restart Claude Code so new skills are loaded.
+
+## Manual file-copy installation (AI tool of your choice)
 ### 1) Clone this repository
 ```bash
 git clone https://github.com/Metalnib/dotnet-episteme-skills.git ~/.local/share/dotnet-episteme-skills
@@ -74,8 +96,8 @@ Each skill is configured to be invocable by both model and user:
 
 `metadata.trigger_keywords` is included as extra routing context. Tools that do not support it can safely ignore it.
 
-## Phase 2: CI publishing
-Phase 2 adds tag-driven publishing inspired by `aaron-dotnet-skills`:
+## CI publishing and releases
+This repository uses tag-driven publishing with validation gates:
 - validates plugin and skill registry
 - validates marketplace metadata alignment
 - creates a GitHub release with a packaged archive
