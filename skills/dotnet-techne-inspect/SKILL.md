@@ -1,12 +1,19 @@
 ---
 name: dotnet-inspect
-description: Use when you need to inspect NuGet package APIs, list public types, or decompile method/property signatures. Triggers: inspect package API, list types, decompile type, method signatures, NuGet interface.
+description: Use when you need to inspect NuGet package APIs, list public types, or decompile method/property signatures. Keywords: inspect package API, list types, decompile type, method signatures, NuGet interface.
+disable-model-invocation: false
+user-invocable: true
 license: MIT
 compatibility: Requires dotnet-inspect OR ilspycmd global tool. Works with bash (Linux/macOS) or PowerShell (Windows).
 metadata:
-  author: Hristo Georgiev
-  organization: Wizer Technologies
+  author: Metalnib
   version: "1.2.0"
+  trigger_keywords:
+    - inspect package api
+    - list types
+    - decompile type
+    - method signatures
+    - nuget interface
 ---
 
 # .NET NuGet Package Inspector

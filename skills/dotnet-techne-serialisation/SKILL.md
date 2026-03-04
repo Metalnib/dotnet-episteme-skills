@@ -1,9 +1,19 @@
 ---
 name: dotnet-techne-serialisation
-description: Use when selecting serialisation formats and contracts for APIs, messaging, caching, or persistence. Triggers: serialisation, System.Text.Json, source generator, protobuf, messagepack, wire compatibility, AOT.
-invocable: false
+description: Use when selecting serialisation formats and contracts for APIs, messaging, caching, or persistence. Keywords: serialisation, System.Text.Json, source generator, protobuf, messagepack, wire compatibility, AOT.
+disable-model-invocation: false
+user-invocable: true
 metadata:
+  author: Metalnib
   version: "1.0.0"
+  trigger_keywords:
+    - serialisation
+    - system.text.json
+    - source generator
+    - protobuf
+    - messagepack
+    - wire compatibility
+    - aot
 ---
 
 # Serialisation in .NET

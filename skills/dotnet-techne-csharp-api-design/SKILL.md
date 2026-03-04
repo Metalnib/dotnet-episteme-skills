@@ -1,9 +1,18 @@
 ---
 name: dotnet-techne-csharp-api-design
-description: Use when designing or changing public C#/.NET APIs with compatibility and versioning constraints. Triggers: breaking change, API design, backward compatibility, binary compatibility, deprecation strategy, versioning.
-invocable: false
+description: Use when designing or changing public C#/.NET APIs with compatibility and versioning constraints. Keywords: breaking change, API design, backward compatibility, binary compatibility, deprecation strategy, versioning.
+disable-model-invocation: false
+user-invocable: true
 metadata:
+  author: Metalnib
   version: "1.0.0"
+  trigger_keywords:
+    - breaking change
+    - api design
+    - backward compatibility
+    - binary compatibility
+    - deprecation strategy
+    - versioning
 ---
 
 # Public API Design and Compatibility

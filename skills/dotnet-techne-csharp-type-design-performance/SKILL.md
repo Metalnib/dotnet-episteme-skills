@@ -1,9 +1,19 @@
 ---
 name: dotnet-techne-csharp-type-design-performance
-description: Use when designing types and collections for hot paths and low-allocation .NET code. Triggers: readonly struct, sealed class, ValueTask, Span, FrozenDictionary, FrozenSet, allocation optimisation.
-invocable: false
+description: Use when designing types and collections for hot paths and low-allocation .NET code. Keywords: readonly struct, sealed class, ValueTask, Span, FrozenDictionary, FrozenSet, allocation optimisation.
+disable-model-invocation: false
+user-invocable: true
 metadata:
+  author: Metalnib
   version: "1.0.0"
+  trigger_keywords:
+    - readonly struct
+    - sealed class
+    - valuetask
+    - span
+    - frozendictionary
+    - frozenset
+    - allocation optimisation
 ---
 
 # Type Design for Performance

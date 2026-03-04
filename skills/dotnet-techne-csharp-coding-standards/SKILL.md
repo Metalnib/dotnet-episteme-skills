@@ -1,9 +1,18 @@
 ---
 name: dotnet-techne-csharp-coding-standards
-description: Use when writing or refactoring modern C# with maintainability and performance standards. Triggers: coding standards, C# best practices, refactor C#, records, pattern matching, async best practices.
-invocable: false
+description: Use when writing or refactoring modern C# with maintainability and performance standards. Keywords: coding standards, C# best practices, refactor C#, records, pattern matching, async best practices.
+disable-model-invocation: false
+user-invocable: true
 metadata:
+  author: Metalnib
   version: "1.0.0"
+  trigger_keywords:
+    - coding standards
+    - c# best practices
+    - refactor c#
+    - records
+    - pattern matching
+    - async best practices
 ---
 
 # Modern C# Coding Standards

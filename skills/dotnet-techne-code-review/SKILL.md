@@ -1,12 +1,21 @@
 ---
 name: code-review
-description: Use when reviewing PRs/diffs/branches for .NET quality, correctness, performance, security, data access, messaging, and observability. Triggers: code review, review PR, review diff, production readiness, low GC, AOT, security review.
+description: Use when reviewing PRs/diffs/branches for .NET quality, correctness, performance, security, data access, messaging, and observability. Keywords: code review, review PR, review diff, production readiness, low GC, AOT, security review.
+disable-model-invocation: false
+user-invocable: true
 license: MIT
 compatibility: Requires git and bash (Linux/macOS) or PowerShell (Windows). Works with any AI agent that supports the Agent Skills specification and has file read and command execution tools.
 metadata:
-  author: Hristo Georgiev
-  organization: Wizer Technologies
+  author: Metalnib
   version: "1.2.0"
+  trigger_keywords:
+    - code review
+    - review pr
+    - review diff
+    - production readiness
+    - low gc
+    - aot
+    - security review
 ---
 
 # End-to-end Code Review (Style + Perf + Security + DB + Messaging + Logging)
