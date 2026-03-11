@@ -1,5 +1,5 @@
 ---
-name: dotnet-inspect
+name: dotnet-techne-inspect
 description: Use when you need to inspect NuGet package APIs, list public types, or decompile method/property signatures. Keywords: inspect package API, list types, decompile type, method signatures, NuGet interface.
 disable-model-invocation: false
 user-invocable: true

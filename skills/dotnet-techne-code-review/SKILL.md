@@ -1,5 +1,5 @@
 ---
-name: code-review
+name: dotnet-techne-code-review
 description: Use when reviewing PRs/diffs/branches for .NET quality, correctness, performance, security, data access, messaging, and observability. Keywords: code review, review PR, review diff, production readiness, low GC, AOT, security review.
 disable-model-invocation: false
 user-invocable: true

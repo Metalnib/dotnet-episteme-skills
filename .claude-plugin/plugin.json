@@ -2,20 +2,26 @@
   "name": "dotnet-episteme-skills",
   "display_name": "DotNet Episteme Skills",
   "description": "Practical, production-tested .NET skills that provide enterprise-proven instructions for AI-assisted development.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "license": "MIT",
   "repository": "https://github.com/Metalnib/dotnet-episteme-skills",
   "skill_prefix": "dotnet-techne-",
   "skills": [
     {
+      "id": "dotnet-techne-synopsis",
+      "name": "dotnet-techne-synopsis",
+      "path": "skills/dotnet-techne-synopsis/SKILL.md",
+      "description": "Use for blast-radius analysis, dependency graphs, cross-repo impact, and architectural overview of .NET workspaces."
+    },
+    {
       "id": "dotnet-techne-inspect",
-      "name": "dotnet-inspect",
+      "name": "dotnet-techne-inspect",
       "path": "skills/dotnet-techne-inspect/SKILL.md",
       "description": "Use when inspecting NuGet APIs, listing public types, or decompiling method signatures."
     },
     {
       "id": "dotnet-techne-code-review",
-      "name": "code-review",
+      "name": "dotnet-techne-code-review",
       "path": "skills/dotnet-techne-code-review/SKILL.md",
       "description": "Use for PR/diff/branch .NET reviews: correctness, performance, security, data, messaging, observability."
     },

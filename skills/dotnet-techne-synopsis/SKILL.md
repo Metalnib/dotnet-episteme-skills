@@ -1,5 +1,5 @@
 ---
-name: dotnet-synopsis
+name: dotnet-techne-synopsis
 description: Use when you need blast-radius analysis, dependency graphs, cross-repo impact, or architectural overview of .NET workspaces. Keywords: blast radius, dependency graph, impact analysis, cross-repo, call graph, endpoint map, EF Core lineage.
 disable-model-invocation: false
 user-invocable: true
