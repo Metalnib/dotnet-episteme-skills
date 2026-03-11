@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>synopsis</AssemblyName>
+    <PublishSingleFile>true</PublishSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <SelfContained>true</SelfContained>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <!-- NOTE: Cannot use JsonSerializerIsReflectionEnabledByDefault=false because
+         Roslyn's MSBuild BuildHost internally uses reflection-based JSON serialization.
+         Our code enforces source-gen via typed SynopsisJsonContext/McpJsonContext overloads
+         and the trim analyzer catches any reflection calls at build time. -->
+    <!-- Publish into skills/dotnet-techne-synopsis/bin/{RID}/ -->
+    <PublishDir>$(MSBuildThisFileDirectory)..\..\..\skills\dotnet-techne-synopsis\bin\$(RuntimeIdentifier)\</PublishDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Synopsis.Analysis\Synopsis.Analysis.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Synopsis.Tests" />
+  </ItemGroup>
+  <!-- Strip net472 BuildHost - we only scan .NET Core/.NET 5+ projects -->
+  <ItemGroup>
+    <Content Remove="@(Content)" Condition="$([System.String]::Copy('%(Identity)').Contains('BuildHost-net472'))" />
+  </ItemGroup>
+  <!--
+    Roslyn's MSBuildWorkspace spawns BuildHost-netcore as a separate process.
+    SingleFile publish absorbs its DLLs into the main binary, breaking it.
+    Post-publish: copy BuildHost-netcore from the non-single-file output.
+  -->
+  <Target Name="RestoreBuildHost" AfterTargets="Publish">
+    <!-- The non-single-file intermediate output has the full BuildHost -->
+    <PropertyGroup>
+      <_IntermediatePublish>$(BaseIntermediateOutputPath)publish\$(RuntimeIdentifier)\</_IntermediatePublish>
+    </PropertyGroup>
+    <ItemGroup>
+      <_BuildHostSource Include="$(OutputPath)BuildHost-netcore\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_BuildHostSource)"
+          DestinationFolder="$(PublishDir)BuildHost-netcore\%(RecursiveDir)"
+          SkipUnchangedFiles="true" />
+    <!-- Clean net472 from publish -->
+    <ItemGroup>
+      <_Net472PubFiles Include="$(PublishDir)BuildHost-net472\**\*" />
+    </ItemGroup>
+    <Delete Files="@(_Net472PubFiles)" />
+    <RemoveDir Directories="$(PublishDir)BuildHost-net472" />
+  </Target>
+  <Target Name="RemoveNet472BuildHost" AfterTargets="Build">
+    <ItemGroup>
+      <_Net472Files Include="$(OutputPath)BuildHost-net472\**\*" />
+    </ItemGroup>
+    <Delete Files="@(_Net472Files)" />
+    <RemoveDir Directories="$(OutputPath)BuildHost-net472" />
+  </Target>
+</Project>

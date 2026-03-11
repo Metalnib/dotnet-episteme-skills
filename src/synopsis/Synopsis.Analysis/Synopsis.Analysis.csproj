@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build.Locator" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" />
+  </ItemGroup>
+  <!-- MSBuild.Locator requires transitive MSBuild packages to exclude runtime assets -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Build.Framework" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Build" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Build.Tasks.Core" ExcludeAssets="runtime" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" ExcludeAssets="runtime" PrivateAssets="all" />
+  </ItemGroup>
+  <!-- Strip net472 BuildHost - we only scan .NET Core/.NET 5+ projects -->
+  <ItemGroup>
+    <Content Remove="@(Content)" Condition="$([System.String]::Copy('%(Identity)').Contains('BuildHost-net472'))" />
+  </ItemGroup>
+  <Target Name="RemoveNet472BuildHost" AfterTargets="Build">
+    <ItemGroup>
+      <_Net472Files Include="$(OutputPath)BuildHost-net472\**\*" />
+    </ItemGroup>
+    <Delete Files="@(_Net472Files)" />
+    <RemoveDir Directories="$(OutputPath)BuildHost-net472" />
+  </Target>
+</Project>

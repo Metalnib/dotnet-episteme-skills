@@ -1,0 +1,13 @@
+# Synopsis pre-built binaries (downloaded on first use or built locally)
+skills/dotnet-techne-synopsis/bin/
+
+# .NET build output
+**/bin/
+**/obj/
+**/artifacts/
+
+# IDE
+.idea/
+.vs/
+*.user
+*.suo

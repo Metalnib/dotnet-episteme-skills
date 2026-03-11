@@ -1,0 +1,19 @@
+**/bin/
+**/obj/
+artifacts/
+.vs/
+*.user
+*.suo
+
+# Build artifacts
+artifacts/
+
+# Generated output
+graph.json
+graph.jsonl
+ambiguous.txt
+
+# Local tooling
+.agents/
+.claude/
+.opencode/

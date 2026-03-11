@@ -1,0 +1,380 @@
+using System.Collections.Frozen;
+using Synopsis.Analysis.Model;
+using Synopsis.Analysis.Graph;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+
+namespace Synopsis.Analysis.Roslyn.Passes;
+
+internal sealed class HttpCallPass : IAnalysisPass
+{
+    private static readonly FrozenDictionary<string, string> HttpMethodVerbs = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["GetAsync"] = "GET", ["GetFromJsonAsync"] = "GET",
+        ["PostAsync"] = "POST", ["PostAsJsonAsync"] = "POST",
+        ["PutAsync"] = "PUT", ["PutAsJsonAsync"] = "PUT",
+        ["DeleteAsync"] = "DELETE", ["PatchAsync"] = "PATCH",
+        ["SendAsync"] = "SEND"
+    }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    public string Name => "http-calls";
+
+    public void Analyze(LoadedProject project, GraphBuilder graph, GraphBuilder? mainGraph, CancellationToken ct)
+    {
+        foreach (var tree in project.Compilation.SyntaxTrees)
+        {
+            if (!project.Workspace.Options.IncludeGeneratedFiles && Symbols.IsGeneratedFile(tree.FilePath))
+                continue;
+
+            var model = project.Compilation.GetSemanticModel(tree);
+            var root = tree.GetRoot(ct);
+
+            foreach (var methodSyntax in root.DescendantNodes().OfType<BaseMethodDeclarationSyntax>())
+                AnalyzeMethod(project, graph, mainGraph, model, methodSyntax, ct);
+        }
+    }
+
+    private static void AnalyzeMethod(LoadedProject project, GraphBuilder graph, GraphBuilder? mainGraph,
+        SemanticModel model, BaseMethodDeclarationSyntax methodSyntax, CancellationToken ct)
+    {
+        if (model.GetDeclaredSymbol(methodSyntax, ct) is not IMethodSymbol methodSymbol)
+            return;
+
+        var methodId = Symbols.MethodId(methodSymbol);
+        var localClients = BuildLocalClientMap(project, model, methodSyntax, ct);
+
+        foreach (var invocation in methodSyntax.DescendantNodes().OfType<InvocationExpressionSyntax>())
+        {
+            if (model.GetSymbolInfo(invocation, ct).Symbol is not IMethodSymbol invokedSymbol)
+                continue;
+            if (!IsHttpCall(invokedSymbol))
+                continue;
+
+            var client = ResolveClient(project, model, invocation, invokedSymbol, localClients);
+
+            graph.AddNode(client.Id, NodeType.HttpClient, client.DisplayName,
+                client.Location, project.RepositoryName, project.ProjectName, client.Certainty,
+                new Dictionary<string, string?> { ["name"] = client.Name, ["baseUrl"] = client.BaseUrl });
+
+            graph.AddEdge(methodId, client.Id, EdgeType.UsesHttpClient,
+                $"{methodSymbol.ContainingType.Name}.{methodSymbol.Name} uses {client.DisplayName}",
+                Symbols.ToLocation(invocation), project.RepositoryName, project.ProjectName, client.Certainty);
+
+            var requestPath = ExtractRequestPath(invocation, model, invokedSymbol);
+            var verb = HttpMethodVerbs.GetValueOrDefault(invokedSymbol.Name,
+                invokedSymbol.Name.Replace("Async", string.Empty, StringComparison.Ordinal));
+            var requestUri = CombineUri(client.BaseUrl, requestPath);
+            var serviceName = requestUri?.Host ?? client.Name ?? client.DisplayName;
+            var serviceId = NodeId.From("external-service", serviceName ?? project.ProjectName);
+            var endpointId = NodeId.From("external-endpoint", verb, requestUri?.ToString() ?? requestPath ?? client.DisplayName);
+
+            graph.AddNode(serviceId, NodeType.ExternalService, serviceName ?? "external-service",
+                Symbols.ToLocation(invocation), project.RepositoryName, project.ProjectName,
+                requestUri is null ? Certainty.Ambiguous : Certainty.Inferred,
+                new Dictionary<string, string?> { ["host"] = requestUri?.Host });
+
+            graph.AddNode(endpointId, NodeType.ExternalEndpoint,
+                $"{verb} {requestUri?.PathAndQuery ?? requestPath ?? "/unknown"}",
+                Symbols.ToLocation(invocation), project.RepositoryName, project.ProjectName,
+                requestPath is null ? Certainty.Unresolved : Certainty.Inferred,
+                new Dictionary<string, string?>
+                {
+                    ["verb"] = verb, ["path"] = requestPath, ["absoluteUri"] = requestUri?.ToString()
+                });
+
+            graph.AddEdge(client.Id, serviceId, EdgeType.CallsHttp,
+                $"{client.DisplayName} targets {serviceName}",
+                Symbols.ToLocation(invocation), project.RepositoryName, project.ProjectName,
+                requestUri is null ? Certainty.Ambiguous : Certainty.Inferred);
+
+            graph.AddEdge(serviceId, endpointId, EdgeType.CallsHttp,
+                $"{serviceName} serves {verb} {requestUri?.PathAndQuery ?? requestPath ?? "/unknown"}",
+                Symbols.ToLocation(invocation), project.RepositoryName, project.ProjectName,
+                requestPath is null ? Certainty.Unresolved : Certainty.Inferred);
+
+            ResolveInternalTarget(project, graph, mainGraph, invocation, client, requestUri, requestPath, endpointId);
+        }
+    }
+
+    private static void ResolveInternalTarget(LoadedProject project, GraphBuilder graph,
+        GraphBuilder? mainGraph, InvocationExpressionSyntax invocation, HttpClientInfo client,
+        Uri? requestUri, string? requestPath, string externalEndpointId)
+    {
+        var path = requestUri?.AbsolutePath ?? requestPath;
+        if (string.IsNullOrWhiteSpace(path))
+            return;
+
+        var lookup = mainGraph ?? graph;
+        var candidates = lookup.FindEndpointCandidates(path);
+
+        // Phase 1: Route match + service affinity (client name / base URL host → repo/project name)
+        var serviceHint = requestUri?.Host ?? client.Name ?? client.DisplayName;
+        var matched = candidates
+            .Where(node =>
+            {
+                var route = node.Metadata.GetValueOrDefault("route");
+                if (string.IsNullOrWhiteSpace(route)) return false;
+                if (!RouteMatches(path, route)
+                    && !path.StartsWith(route, StringComparison.OrdinalIgnoreCase)
+                    && !route.StartsWith(path, StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                // Narrow by service affinity: does the client hint correlate with the target repo/project?
+                return MatchesServiceHint(node, serviceHint, client.BaseUrl);
+            })
+            .ToArray();
+
+        // Phase 2: If affinity filter found nothing, fall back to route-only (but flag as ambiguous)
+        if (matched.Length == 0)
+        {
+            matched = candidates
+                .Where(node =>
+                {
+                    var route = node.Metadata.GetValueOrDefault("route");
+                    if (string.IsNullOrWhiteSpace(route)) return false;
+                    return RouteMatches(path, route);
+                })
+                .ToArray();
+        }
+
+        if (matched.Length == 0)
+            return;
+
+        var certainty = matched.Length == 1 ? Certainty.Inferred : Certainty.Ambiguous;
+        foreach (var candidate in matched)
+        {
+            graph.AddEdge(externalEndpointId, candidate.Id,
+                certainty == Certainty.Ambiguous ? EdgeType.Ambiguous : EdgeType.ResolvesToService,
+                $"{client.DisplayName} resolves to {candidate.DisplayName}",
+                Symbols.ToLocation(invocation), project.RepositoryName, project.ProjectName, certainty);
+
+            if (!string.Equals(project.RepositoryName, candidate.RepositoryName, StringComparison.OrdinalIgnoreCase))
+                graph.AddEdge(externalEndpointId, candidate.Id, EdgeType.CrossesRepoBoundary,
+                    $"{project.ProjectName} calls across repo into {candidate.RepositoryName}",
+                    Symbols.ToLocation(invocation), project.RepositoryName, project.ProjectName, certainty);
+        }
+    }
+
+    private static Dictionary<ISymbol, HttpClientInfo> BuildLocalClientMap(
+        LoadedProject project, SemanticModel model,
+        BaseMethodDeclarationSyntax methodSyntax, CancellationToken ct)
+    {
+        var map = new Dictionary<ISymbol, HttpClientInfo>(SymbolEqualityComparer.Default);
+
+        foreach (var variable in methodSyntax.DescendantNodes().OfType<VariableDeclaratorSyntax>())
+        {
+            if (variable.Initializer?.Value is null) continue;
+            if (model.GetDeclaredSymbol(variable, ct) is not ISymbol local) continue;
+
+            var info = TryCreateFromExpression(project, model, variable.Initializer.Value, variable.Identifier.ValueText, ct);
+            if (info is not null)
+                map[local] = info;
+        }
+
+        return map;
+    }
+
+    private static HttpClientInfo ResolveClient(LoadedProject project, SemanticModel model,
+        InvocationExpressionSyntax invocation, IMethodSymbol invokedSymbol,
+        Dictionary<ISymbol, HttpClientInfo> localClients)
+    {
+        if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+        {
+            var receiverSymbol = model.GetSymbolInfo(memberAccess.Expression).Symbol;
+            if (receiverSymbol is not null && localClients.TryGetValue(receiverSymbol, out var local))
+                return local;
+
+            var receiverType = model.GetTypeInfo(memberAccess.Expression).Type;
+            if (receiverType?.Name == "HttpClient")
+                return CreateInfo(project, memberAccess.Expression.ToString(), memberAccess.Expression.ToString(),
+                    FindBaseUrl(project, memberAccess.Expression.ToString()),
+                    Symbols.ToLocation(invocation), Certainty.Inferred);
+        }
+
+        return CreateInfo(project, invokedSymbol.ContainingType.Name, invokedSymbol.ContainingType.Name,
+            FindBaseUrl(project, invokedSymbol.ContainingType.Name),
+            Symbols.ToLocation(invocation), Certainty.Ambiguous);
+    }
+
+    private static HttpClientInfo? TryCreateFromExpression(LoadedProject project, SemanticModel model,
+        ExpressionSyntax expression, string fallback, CancellationToken ct)
+    {
+        if (expression is InvocationExpressionSyntax invocation
+            && model.GetSymbolInfo(invocation, ct).Symbol is IMethodSymbol symbol
+            && string.Equals(symbol.Name, "CreateClient", StringComparison.Ordinal)
+            && symbol.ContainingType.Name == "IHttpClientFactory")
+        {
+            var name = invocation.ArgumentList.Arguments.Count > 0
+                ? EndpointPass.TryGetStringValue(invocation.ArgumentList.Arguments[0].Expression, model)
+                : fallback;
+            return CreateInfo(project, name ?? fallback, name ?? fallback,
+                FindBaseUrl(project, name ?? fallback),
+                Symbols.ToLocation(invocation), Certainty.Inferred);
+        }
+
+        if (expression is ObjectCreationExpressionSyntax objectCreation
+            && model.GetSymbolInfo(objectCreation, ct).Symbol is IMethodSymbol ctor
+            && ctor.ContainingType.Name == "HttpClient")
+        {
+            return CreateInfo(project, fallback, fallback, FindBaseUrl(project, fallback),
+                Symbols.ToLocation(objectCreation), Certainty.Ambiguous);
+        }
+
+        return null;
+    }
+
+    private static bool IsHttpCall(IMethodSymbol method)
+    {
+        if (!HttpMethodVerbs.ContainsKey(method.Name))
+            return false;
+        var typeName = method.ContainingType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        return typeName.Contains("HttpClient", StringComparison.Ordinal)
+            || typeName.Contains("HttpClientJsonExtensions", StringComparison.Ordinal);
+    }
+
+    private static string? ExtractRequestPath(InvocationExpressionSyntax invocation, SemanticModel model, IMethodSymbol method)
+    {
+        if (method.Name == "SendAsync") return null;
+        return invocation.ArgumentList.Arguments.Count > 0
+            ? EndpointPass.TryGetStringValue(invocation.ArgumentList.Arguments[0].Expression, model)
+            : null;
+    }
+
+    private static string? FindBaseUrl(LoadedProject project, string hint)
+    {
+        static bool LooksLikeUrl(string? v) => Uri.TryCreate(v, UriKind.Absolute, out _);
+
+        var repoConfigs = project.ConfigurationValues.ToArray();
+        return repoConfigs
+            .Where(v => v.Key.Contains("url", StringComparison.OrdinalIgnoreCase)
+                || v.Key.Contains("baseurl", StringComparison.OrdinalIgnoreCase))
+            .Where(v => v.Key.Contains(hint, StringComparison.OrdinalIgnoreCase)
+                || (v.Value?.Contains(hint, StringComparison.OrdinalIgnoreCase) ?? false))
+            .Select(v => v.Value)
+            .FirstOrDefault(LooksLikeUrl)
+        ?? repoConfigs
+            .Where(v => v.Key.Contains("url", StringComparison.OrdinalIgnoreCase))
+            .Select(v => v.Value)
+            .FirstOrDefault(LooksLikeUrl);
+    }
+
+    private static Uri? CombineUri(string? baseUrl, string? requestPath)
+    {
+        if (!string.IsNullOrWhiteSpace(requestPath)
+            && requestPath.Contains("://", StringComparison.Ordinal)
+            && Uri.TryCreate(requestPath, UriKind.Absolute, out var absolute))
+            return absolute;
+
+        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri)
+            && !string.IsNullOrWhiteSpace(requestPath)
+            && Uri.TryCreate(baseUri, requestPath, out var combined))
+            return combined;
+
+        return null;
+    }
+
+    private static HttpClientInfo CreateInfo(LoadedProject project, string displayName, string name,
+        string? baseUrl, SourceLocation? location, Certainty certainty) =>
+        new(NodeId.From("http-client", project.ProjectName, name), displayName, name, baseUrl, location, certainty);
+
+    private static bool RouteMatches(string requestPath, string routeTemplate)
+    {
+        var reqSegments = requestPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var routeSegments = routeTemplate.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (reqSegments.Length != routeSegments.Length) return false;
+
+        for (var i = 0; i < reqSegments.Length; i++)
+        {
+            var seg = routeSegments[i];
+            if (seg.StartsWith('{') && seg.EndsWith('}')) continue;
+            if (!string.Equals(reqSegments[i], seg, StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Checks if the target endpoint's repo/project name correlates with the HTTP client's
+    /// service hint (client name, base URL host, or config key).
+    /// For example: client "CatalogClient" with baseUrl "http://catalog-api" should match
+    /// endpoints in repo "catalog-api" or project "Catalog.Api".
+    /// </summary>
+    private static bool MatchesServiceHint(GraphNode endpoint, string serviceHint, string? baseUrl)
+    {
+        var repo = endpoint.RepositoryName;
+        var project = endpoint.ProjectName;
+
+        // Direct match: hint contains repo/project name or vice versa
+        if (repo is not null && (
+            serviceHint.Contains(repo, StringComparison.OrdinalIgnoreCase)
+            || repo.Contains(serviceHint, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (project is not null && (
+            serviceHint.Contains(project, StringComparison.OrdinalIgnoreCase)
+            || project.Contains(serviceHint, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        // Normalized match: strip common suffixes/prefixes and compare stems
+        // "CatalogClient" → "catalog", "catalog-api" → "catalog", "Catalog.Api" → "catalog"
+        var hintStem = NormalizeServiceName(serviceHint);
+        if (hintStem.Length >= 3)
+        {
+            if (repo is not null && NormalizeServiceName(repo).Contains(hintStem, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (project is not null && NormalizeServiceName(project).Contains(hintStem, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        // Base URL host match: "http://catalog-api:5000" host → "catalog-api" → match repo "catalog-api"
+        if (baseUrl is not null && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+        {
+            var host = uri.Host;
+            if (repo is not null && (
+                host.Contains(repo, StringComparison.OrdinalIgnoreCase)
+                || repo.Contains(host, StringComparison.OrdinalIgnoreCase)))
+                return true;
+
+            var hostStem = NormalizeServiceName(host);
+            if (hostStem.Length >= 3)
+            {
+                if (repo is not null && NormalizeServiceName(repo).Contains(hostStem, StringComparison.OrdinalIgnoreCase))
+                    return true;
+                if (project is not null && NormalizeServiceName(project).Contains(hostStem, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Strips common suffixes (Client, Service, Api, Gateway, Proxy, Handler) and
+    /// separators (-, ., _) to produce a comparable stem.
+    /// "CatalogClient" → "catalog", "orders-api" → "orders", "Payment.Gateway" → "payment"
+    /// </summary>
+    private static string NormalizeServiceName(string name)
+    {
+        var result = name;
+        ReadOnlySpan<string> suffixes = ["Client", "Service", "Api", "Gateway", "Proxy", "Handler", "Server"];
+        foreach (var suffix in suffixes)
+        {
+            if (result.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && result.Length > suffix.Length)
+                result = result[..^suffix.Length];
+        }
+
+        ReadOnlySpan<string> prefixes = ["repo-", "svc-", "service-"];
+        foreach (var prefix in prefixes)
+        {
+            if (result.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && result.Length > prefix.Length)
+                result = result[prefix.Length..];
+        }
+
+        return result.Replace("-", "", StringComparison.Ordinal)
+            .Replace(".", "", StringComparison.Ordinal)
+            .Replace("_", "", StringComparison.Ordinal)
+            .ToLowerInvariant();
+    }
+
+    private sealed record HttpClientInfo(string Id, string DisplayName, string? Name, string? BaseUrl,
+        SourceLocation? Location, Certainty Certainty);
+}
