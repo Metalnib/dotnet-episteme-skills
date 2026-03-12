@@ -18,7 +18,7 @@ These skills provide practical, real-world, enterprise-proven instructions that 
 ### Performance and concurrency
 - `dotnet-techne-csharp-concurrency-patterns` (`1.0.0`) — choosing async/channels/dataflow/Rx patterns.
 - `dotnet-techne-csharp-type-design-performance` (`1.0.0`) — readonly structs, sealed types, spans, frozen collections.
-- `dotnet-techne-inspect` (`1.2.0`) — inspect NuGet package APIs and decompile signatures.
+- `dotnet-techne-inspect` (`1.2.0`) — inspect NuGet package APIs and decompile signatures (needs dotnet-inspect or ilspycmd installed).
 
 ### Serialisation and contracts
 - `dotnet-techne-serialisation` (`1.0.0`) — serialisation format and wire compatibility decisions.
