@@ -16,15 +16,20 @@ Write-Host ""
 
 # Get changed files
 if ($Target -match '\.\.') {
-    $changedFiles = git diff --name-only $Target | Where-Object { $_ -match '\.cs$' }
-    $diffCmd = "git diff $Target"
-    $mergeBase = $Target.Split('..')[0]
+    $rangeSpec = $Target
 }
+
+$diffFileList = git --no-pager diff --name-only $rangeSpec 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Invalid review target: $Target" -ForegroundColor Red
+    exit 1
+}
+
+$changedFiles = $diffFileList | Where-Object { $_ -match '\.cs$' }
 else {
-    $mergeBase = git merge-base HEAD $Target 2>$null
+    $mergeBase = git --no-pager merge-base HEAD $Target 2>$null
     if (-not $mergeBase) { $mergeBase = $Target }
-    $changedFiles = git diff --name-only "$mergeBase...HEAD" | Where-Object { $_ -match '\.cs$' }
-    $diffCmd = "git diff $mergeBase...HEAD"
+    $rangeSpec = "$mergeBase...HEAD"
 }
 
 if (-not $changedFiles) {
@@ -43,17 +48,17 @@ Write-Host ""
 Write-Host "## Commits"
 Write-Host '```'
 if ($Target -match '\.\.') {
-    git log --oneline $Target
+    git --no-pager log --oneline $Target
 }
 else {
-    git log --oneline "$mergeBase...HEAD" 2>$null
-    if ($LASTEXITCODE -ne 0) { git log --oneline -10 }
+    git --no-pager log --oneline $rangeSpec 2>$null
+    if ($LASTEXITCODE -ne 0) { git --no-pager log --oneline -10 }
 }
 Write-Host '```'
 Write-Host ""
 
 # Changed .csproj files
-$changedProj = git diff --name-only "$mergeBase...HEAD" 2>$null | Where-Object { $_ -match '\.csproj$' }
+$changedProj = git --no-pager diff --name-only $rangeSpec 2>$null | Where-Object { $_ -match '\.csproj$' }
 if ($changedProj) {
     Write-Host "## Changed Project Files"
     Write-Host '```'
@@ -62,10 +67,23 @@ if ($changedProj) {
     Write-Host ""
 }
 
+Write-Host "## Potential Risk Signals (heuristic)"
+Write-Host '```'
+$riskPattern = 'TODO|FIXME|HACK|throw new NotImplementedException|catch\s*\(Exception|\.Result\b|\.Wait\(|#pragma warning disable|AllowAnonymous|FromSqlRaw|ExecuteSqlRaw|IgnoreQueryFilters|Task\.Run\('
+$riskSignals = git --no-pager diff $rangeSpec -- '*.cs' 2>$null | Select-String -Pattern $riskPattern | Select-Object -First 80
+if ($riskSignals) {
+    $riskSignals | ForEach-Object { Write-Host $_.Line.Trim() }
+}
+else {
+    Write-Host "(no heuristic risk signals matched)"
+}
+Write-Host '```'
+Write-Host ""
+
 if ($Mode -eq "full") {
     Write-Host "## Full Diff"
     Write-Host '```diff'
-    Invoke-Expression "$diffCmd -- '*.cs'" 2>$null
+    git --no-pager diff $rangeSpec -- '*.cs' 2>$null
     Write-Host '```'
     Write-Host ""
     
@@ -83,7 +101,7 @@ if ($Mode -eq "full") {
 else {
     Write-Host "## Diff Stats"
     Write-Host '```'
-    Invoke-Expression "$diffCmd --stat -- '*.cs'" 2>$null
+    git --no-pager diff --stat $rangeSpec -- '*.cs' 2>$null
     Write-Host '```'
     Write-Host ""
     

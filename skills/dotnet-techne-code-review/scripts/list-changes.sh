@@ -12,16 +12,17 @@ RANGE="${1:-}"
 
 get_files() {
     if [ -z "$RANGE" ]; then
-        # Uncommitted changes (staged + unstaged)
-        git diff --name-only HEAD 2>/dev/null || git diff --name-only
-        git diff --name-only --cached 2>/dev/null || true
+        # Uncommitted changes (staged + unstaged + untracked)
+        git --no-pager diff --name-only HEAD 2>/dev/null || git --no-pager diff --name-only
+        git --no-pager diff --name-only --cached 2>/dev/null || true
+        git --no-pager ls-files --others --exclude-standard 2>/dev/null || true
     elif [[ "$RANGE" == *".."* ]]; then
         # Explicit range
-        git diff --name-only "$RANGE"
+        git --no-pager diff --name-only "$RANGE"
     else
         # Branch comparison
-        MERGE_BASE=$(git merge-base HEAD "$RANGE" 2>/dev/null || echo "$RANGE")
-        git diff --name-only "$MERGE_BASE"...HEAD
+        MERGE_BASE=$(git --no-pager merge-base HEAD "$RANGE" 2>/dev/null || echo "$RANGE")
+        git --no-pager diff --name-only "$MERGE_BASE"...HEAD
     fi
 }
 

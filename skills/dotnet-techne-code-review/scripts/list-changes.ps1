@@ -9,20 +9,21 @@ $ErrorActionPreference = "Stop"
 
 function Get-ChangedFiles {
     if ([string]::IsNullOrEmpty($Range)) {
-        # Uncommitted changes
-        $staged = git diff --name-only --cached 2>$null
-        $unstaged = git diff --name-only HEAD 2>$null
-        return ($staged + $unstaged) | Sort-Object -Unique
+        # Uncommitted changes (staged + unstaged + untracked)
+        $staged = git --no-pager diff --name-only --cached 2>$null
+        $unstaged = git --no-pager diff --name-only HEAD 2>$null
+        $untracked = git --no-pager ls-files --others --exclude-standard 2>$null
+        return ($staged + $unstaged + $untracked) | Sort-Object -Unique
     }
     elseif ($Range -match '\.\.') {
         # Explicit range
-        return git diff --name-only $Range
+        return git --no-pager diff --name-only $Range
     }
     else {
         # Branch comparison
-        $mergeBase = git merge-base HEAD $Range 2>$null
+        $mergeBase = git --no-pager merge-base HEAD $Range 2>$null
         if (-not $mergeBase) { $mergeBase = $Range }
-        return git diff --name-only "$mergeBase...HEAD"
+        return git --no-pager diff --name-only "$mergeBase...HEAD"
     }
 }
 

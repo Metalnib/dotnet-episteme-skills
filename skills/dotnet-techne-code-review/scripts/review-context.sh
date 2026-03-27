@@ -8,6 +8,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="${1:-main}"
 MODE="${2:---brief}"
+RANGE_SPEC=""
 
 echo "# Code Review Context"
 echo "Generated: $(date -Iseconds)"
@@ -16,13 +17,18 @@ echo ""
 
 # Get changed files
 if [[ "$TARGET" == *".."* ]]; then
-    CHANGED_FILES=$(git diff --name-only "$TARGET" | grep -E '\.cs$' || true)
-    DIFF_CMD="git diff $TARGET"
+    RANGE_SPEC="$TARGET"
 else
-    MERGE_BASE=$(git merge-base HEAD "$TARGET" 2>/dev/null || echo "$TARGET")
-    CHANGED_FILES=$(git diff --name-only "$MERGE_BASE"...HEAD | grep -E '\.cs$' || true)
-    DIFF_CMD="git diff $MERGE_BASE...HEAD"
+    MERGE_BASE=$(git --no-pager merge-base HEAD "$TARGET" 2>/dev/null || echo "$TARGET")
+    RANGE_SPEC="$MERGE_BASE...HEAD"
 fi
+
+if ! DIFF_FILE_LIST=$(git --no-pager diff --name-only "$RANGE_SPEC" 2>/dev/null); then
+    echo "Invalid review target: $TARGET"
+    exit 1
+fi
+
+CHANGED_FILES=$(echo "$DIFF_FILE_LIST" | grep -E '\.cs$' || true)
 
 if [ -z "$CHANGED_FILES" ]; then
     echo "No C# files changed."
@@ -39,15 +45,15 @@ echo ""
 echo "## Commits"
 echo '```'
 if [[ "$TARGET" == *".."* ]]; then
-    git log --oneline "$TARGET"
+    git --no-pager log --oneline "$TARGET"
 else
-    git log --oneline "$MERGE_BASE"...HEAD 2>/dev/null || git log --oneline -10
+    git --no-pager log --oneline "$RANGE_SPEC" 2>/dev/null || git --no-pager log --oneline -10
 fi
 echo '```'
 echo ""
 
 # Changed .csproj files
-CHANGED_PROJ=$(git diff --name-only "$MERGE_BASE"...HEAD 2>/dev/null | grep -E '\.csproj$' || true)
+CHANGED_PROJ=$(git --no-pager diff --name-only "$RANGE_SPEC" 2>/dev/null | grep -E '\.csproj$' || true)
 if [ -n "$CHANGED_PROJ" ]; then
     echo "## Changed Project Files"
     echo '```'
@@ -56,10 +62,16 @@ if [ -n "$CHANGED_PROJ" ]; then
     echo ""
 fi
 
+echo "## Potential Risk Signals (heuristic)"
+echo '```'
+git --no-pager diff "$RANGE_SPEC" -- "*.cs" 2>/dev/null | grep -nE 'TODO|FIXME|HACK|throw new NotImplementedException|catch[[:space:]]*\(Exception|\.Result\b|\.Wait\(|#pragma warning disable|AllowAnonymous|FromSqlRaw|ExecuteSqlRaw|IgnoreQueryFilters|Task\.Run\(' | head -80 || echo "(no heuristic risk signals matched)"
+echo '```'
+echo ""
+
 if [ "$MODE" == "--full" ]; then
     echo "## Full Diff"
     echo '```diff'
-    $DIFF_CMD -- "*.cs" 2>/dev/null || true
+    git --no-pager diff "$RANGE_SPEC" -- "*.cs" 2>/dev/null || true
     echo '```'
     echo ""
     
@@ -76,7 +88,7 @@ if [ "$MODE" == "--full" ]; then
 else
     echo "## Diff Stats"
     echo '```'
-    $DIFF_CMD --stat -- "*.cs" 2>/dev/null || true
+    git --no-pager diff --stat "$RANGE_SPEC" -- "*.cs" 2>/dev/null || true
     echo '```'
     echo ""
     

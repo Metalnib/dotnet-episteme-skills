@@ -9,12 +9,12 @@ $ErrorActionPreference = "Stop"
 
 # Get changed files
 if ($Target -match '\.\.') {
-    $changedFiles = git diff --name-only $Target | Where-Object { $_ -match '\.cs$' }
+    $changedFiles = git --no-pager diff --name-only $Target | Where-Object { $_ -match '\.cs$' }
 }
 else {
-    $mergeBase = git merge-base HEAD $Target 2>$null
+    $mergeBase = git --no-pager merge-base HEAD $Target 2>$null
     if (-not $mergeBase) { $mergeBase = $Target }
-    $changedFiles = git diff --name-only "$mergeBase...HEAD" | Where-Object { $_ -match '\.cs$' }
+    $changedFiles = git --no-pager diff --name-only "$mergeBase...HEAD" | Where-Object { $_ -match '\.cs$' }
 }
 
 if (-not $changedFiles) {

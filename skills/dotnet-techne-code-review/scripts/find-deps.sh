@@ -29,8 +29,16 @@ if [ -z "$TYPES" ]; then
 fi
 
 echo "=== Files referencing: $TYPES ==="
-rg -l "($TYPES)" --type cs "$SEARCH_PATH" 2>/dev/null | grep -v "^$TARGET$" | sort -u || echo "(no references found)"
+if command -v rg >/dev/null 2>&1; then
+    rg -l "($TYPES)" --type cs "$SEARCH_PATH" 2>/dev/null | grep -v "^$TARGET$" | sort -u || echo "(no references found)"
+else
+    grep -R -l -E --include='*.cs' "($TYPES)" "$SEARCH_PATH" 2>/dev/null | grep -v "^$TARGET$" | sort -u || echo "(no references found)"
+fi
 echo ""
 
 echo "=== Usage contexts ==="
-rg -n "($TYPES)" --type cs "$SEARCH_PATH" -C 1 2>/dev/null | head -100 || echo "(no usages found)"
+if command -v rg >/dev/null 2>&1; then
+    rg -n "($TYPES)" --type cs "$SEARCH_PATH" -C 1 2>/dev/null | head -100 || echo "(no usages found)"
+else
+    grep -R -n -E --include='*.cs' "($TYPES)" "$SEARCH_PATH" 2>/dev/null | head -100 || echo "(no usages found)"
+fi

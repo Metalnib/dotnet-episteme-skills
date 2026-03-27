@@ -8,10 +8,10 @@ TARGET="${1:-main}"
 
 # Get changed files
 if [[ "$TARGET" == *".."* ]]; then
-    CHANGED_FILES=$(git diff --name-only "$TARGET" | grep -E '\.cs$' || true)
+    CHANGED_FILES=$(git --no-pager diff --name-only "$TARGET" | grep -E '\.cs$' || true)
 else
-    MERGE_BASE=$(git merge-base HEAD "$TARGET" 2>/dev/null || echo "$TARGET")
-    CHANGED_FILES=$(git diff --name-only "$MERGE_BASE"...HEAD | grep -E '\.cs$' || true)
+    MERGE_BASE=$(git --no-pager merge-base HEAD "$TARGET" 2>/dev/null || echo "$TARGET")
+    CHANGED_FILES=$(git --no-pager diff --name-only "$MERGE_BASE"...HEAD | grep -E '\.cs$' || true)
 fi
 
 if [ -z "$CHANGED_FILES" ]; then
@@ -43,7 +43,7 @@ echo "$SOURCE_FILES" | while read -r file; do
     BASENAME=$(basename "$file" .cs)
     
     # Search for test files matching this name
-    MATCHING_TESTS=$(find . -type f -name "*${BASENAME}*Test*.cs" -o -name "*${BASENAME}*Spec*.cs" -o -name "*Test*${BASENAME}*.cs" 2>/dev/null | head -10 || true)
+    MATCHING_TESTS=$(find . -type f \( -name "*${BASENAME}*Test*.cs" -o -name "*${BASENAME}*Spec*.cs" -o -name "*Test*${BASENAME}*.cs" \) 2>/dev/null | head -10 || true)
     
     if [ -n "$MATCHING_TESTS" ]; then
         echo "  $file:"

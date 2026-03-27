@@ -10,26 +10,26 @@ MODE="${2:---stat}"
 case "$MODE" in
     --stat)
         echo "=== Stats for last $N commit(s) ==="
-        git diff --stat HEAD~"$N"..HEAD
+        git --no-pager diff --stat HEAD~"$N"..HEAD
         ;;
     --files)
         echo "=== Files changed in last $N commit(s) ==="
-        git diff --name-only HEAD~"$N"..HEAD
+        git --no-pager diff --name-only HEAD~"$N"..HEAD
         ;;
     --full)
         echo "=== Full diff for last $N commit(s) ==="
-        git diff HEAD~"$N"..HEAD
+        git --no-pager diff HEAD~"$N"..HEAD
         ;;
     --log)
         echo "=== Log for last $N commit(s) ==="
-        git log --oneline -n "$N"
+        git --no-pager log --oneline -n "$N"
         echo ""
         echo "=== Detailed log ==="
-        git log --stat -n "$N"
+        git --no-pager log --stat -n "$N"
         ;;
     --cs)
         echo "=== C# files changed in last $N commit(s) ==="
-        git diff --name-only HEAD~"$N"..HEAD | grep -E '\.(cs|csproj|sln)$' || echo "(no C# files changed)"
+        git --no-pager diff --name-only HEAD~"$N"..HEAD | grep -E '\.(cs|csproj|sln)$' || echo "(no C# files changed)"
         ;;
     *)
         echo "Usage: $0 [n] [--stat|--files|--full|--log|--cs]"
