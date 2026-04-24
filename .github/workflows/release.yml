@@ -117,6 +117,15 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "SKILL_COUNT=$SKILL_COUNT" >> "$GITHUB_ENV"
 
+          # Extract changelog section for this version (between this header and the next)
+          NOTES="$(awk "/^## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)"
+          # Store as multiline env var
+          {
+            echo "RELEASE_NOTES<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
       - name: Collect release files
         run: |
           mkdir -p release-files
@@ -132,6 +141,10 @@ jobs:
             ## DotNet Episteme Skills ${{ env.VERSION }}
 
             **Skills included:** ${{ env.SKILL_COUNT }}
+
+            ${{ env.RELEASE_NOTES }}
+
+            ---
 
             ### Synopsis binaries (auto-downloaded on first use)
             | Platform | Asset |
