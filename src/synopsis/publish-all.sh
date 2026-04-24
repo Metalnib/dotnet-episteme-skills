@@ -7,7 +7,7 @@ cd "$SCRIPT_DIR"
 SKILL_BIN="$SCRIPT_DIR/../../skills/dotnet-techne-synopsis/bin"
 RELEASE_DIR="$SCRIPT_DIR/artifacts/release"
 
-RIDS=("osx-arm64" "win-x64" "linux-x64")
+RIDS=("osx-arm64" "osx-x64" "win-x64" "win-arm64" "linux-x64" "linux-arm64")
 
 for RID in "${RIDS[@]}"; do
     echo "=== Publishing $RID ==="

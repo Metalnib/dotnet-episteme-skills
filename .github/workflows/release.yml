@@ -30,12 +30,21 @@ jobs:
           - rid: osx-arm64
             os: macos-14
             asset: synopsis-osx-arm64.tar.gz
+          - rid: osx-x64
+            os: macos-14
+            asset: synopsis-osx-x64.tar.gz
           - rid: win-x64
             os: windows-latest
             asset: synopsis-win-x64.zip
+          - rid: win-arm64
+            os: windows-latest
+            asset: synopsis-win-arm64.zip
           - rid: linux-x64
             os: ubuntu-latest
             asset: synopsis-linux-x64.tar.gz
+          - rid: linux-arm64
+            os: ubuntu-latest
+            asset: synopsis-linux-arm64.tar.gz
     steps:
       - uses: actions/checkout@v4
 
@@ -128,8 +137,11 @@ jobs:
             | Platform | Asset |
             |---|---|
             | macOS Apple Silicon | `synopsis-osx-arm64.tar.gz` |
+            | macOS Intel | `synopsis-osx-x64.tar.gz` |
             | Windows x64 | `synopsis-win-x64.zip` |
+            | Windows arm64 | `synopsis-win-arm64.zip` |
             | Linux x64 | `synopsis-linux-x64.tar.gz` |
+            | Linux arm64 | `synopsis-linux-arm64.tar.gz` |
 
             The detect script (`scripts/detect-tool.sh` / `.ps1`) auto-downloads the correct binary on first use. No manual install needed.
 
