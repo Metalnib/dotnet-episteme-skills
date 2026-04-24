@@ -24,7 +24,8 @@ public enum NodeType
     DbContext,
     Entity,
     Table,
-    ConfigurationKey
+    ConfigurationKey,
+    Package
 }
 
 public enum EdgeType
@@ -42,6 +43,7 @@ public enum EdgeType
     QueriesEntity,
     MapsToTable,
     DependsOn,
+    DependsOnPackage,
     CrossesRepoBoundary,
     Ambiguous
 }

@@ -14,4 +14,18 @@
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
   </ItemGroup>
+
+  <!--
+    Pin the patched version of System.Security.Cryptography.Xml for every project
+    in the solution. The vulnerable 10.0.1 ships as a transitive of the
+    Microsoft.Build.* / Microsoft.CodeAnalysis.Workspaces.MSBuild packages
+    referenced by Synopsis.Analysis. Using GlobalPackageReference here (rather
+    than a per-csproj PackageReference) guarantees the pin applies to any
+    future project that also pulls Microsoft.Build / Roslyn transitively —
+    maintainers don't have to remember to re-pin in each new csproj.
+    Advisories: GHSA-37gx-xxp4-5rgx, GHSA-w3x6-4m5h-cxqf (CVE-2026-33116).
+  -->
+  <ItemGroup>
+    <GlobalPackageReference Include="System.Security.Cryptography.Xml" Version="10.0.6" />
+  </ItemGroup>
 </Project>

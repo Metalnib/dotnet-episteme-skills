@@ -7,5 +7,5 @@ public static class ScannerBuilder
 {
     public static WorkspaceScanner Create() =>
         new(new WorkspaceLoader(),
-            [new EndpointPass(), new HttpCallPass(), new DataAccessPass()]);
+            [new EndpointPass(), new HttpCallPass(), new DataAccessPass(), new PackagePass()]);
 }
