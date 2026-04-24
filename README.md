@@ -78,7 +78,7 @@ Cynical review of this PR before I merge.
 
 Security-focused review of PR #247 (auth middleware).
 
-Tear apart this message consumer - it'll be processing 50k messages/hour.
+Tear apart this message consumer - it'll be processing 250k messages/hour.
 ```
 
 ---
