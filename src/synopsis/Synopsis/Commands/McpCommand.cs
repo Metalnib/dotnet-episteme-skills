@@ -10,10 +10,18 @@ internal static class McpCommand
     {
         var rootPath = CliArgs.Option(args, "--root");
         var graphPath = CliArgs.Option(args, "--graph");
+        var socketPath = CliArgs.Option(args, "--socket");
+        var tcpAddr = CliArgs.Option(args, "--tcp");
 
         if (string.IsNullOrWhiteSpace(rootPath) && string.IsNullOrWhiteSpace(graphPath))
         {
-            Console.Error.WriteLine("Usage: synopsis mcp --root <rootPath> | --graph <graph.json>");
+            PrintUsage();
+            return 1;
+        }
+
+        if (!string.IsNullOrWhiteSpace(socketPath) && !string.IsNullOrWhiteSpace(tcpAddr))
+        {
+            Console.Error.WriteLine("--socket and --tcp are mutually exclusive.");
             return 1;
         }
 
@@ -38,11 +46,38 @@ internal static class McpCommand
             return 1;
         }
 
+        IMcpTransport transport;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(socketPath))
+                transport = new UnixSocketTransport(socketPath);
+            else if (!string.IsNullOrWhiteSpace(tcpAddr))
+                transport = TcpTransport.Create(tcpAddr);
+            else
+                transport = new StdioTransport();
+        }
+        catch (Exception ex) when (ex is ArgumentException or System.Net.Sockets.SocketException or IOException)
+        {
+            Console.Error.WriteLine($"[mcp] Failed to open transport: {ex.Message}");
+            return 1;
+        }
+
         using var cts = new CancellationTokenSource();
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
         var server = new McpServer(graph);
-        await server.RunAsync(cts.Token);
+        await using (transport)
+        {
+            await server.RunAsync(transport, cts.Token);
+        }
         return 0;
+    }
+
+    private static void PrintUsage()
+    {
+        Console.Error.WriteLine("Usage: synopsis mcp (--root <rootPath> | --graph <graph.json>) [--socket <path> | --tcp <addr>]");
+        Console.Error.WriteLine("  --socket <path>   listen on a Unix domain socket (daemon mode).");
+        Console.Error.WriteLine("  --tcp <addr>      listen on TCP (host:port, :port, or port). Default host: 127.0.0.1.");
+        Console.Error.WriteLine("  (default)         read one request stream from stdin, respond on stdout.");
     }
 }

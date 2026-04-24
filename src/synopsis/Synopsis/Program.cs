@@ -54,5 +54,5 @@ static void PrintHelp()
     Console.WriteLine("  synopsis git-scan <rootPath> --base <branch> [--head HEAD] [--depth 4] [--json]");
     Console.WriteLine("  synopsis diff <before.json> <after.json> [--json]");
     Console.WriteLine("  synopsis breaking-diff <before.json> <after.json> [--json] [-o report.json]");
-    Console.WriteLine("  synopsis mcp --root <rootPath> | --graph <graph.json>");
+    Console.WriteLine("  synopsis mcp (--root <rootPath> | --graph <graph.json>) [--socket <path> | --tcp <addr>]");
 }
