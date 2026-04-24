@@ -10,7 +10,7 @@
     {
       "name": "dotnet-episteme-skills",
       "source": "./",
-      "version": "1.4.0",
+      "version": "1.5.0",
       "description": "Practical, production-tested .NET skills covering static analysis, review, API design, coding standards, concurrency, type performance, and serialisation."
     }
   ]

@@ -1,3 +1,4 @@
+using System.Reflection;
 using Synopsis.Commands;
 
 return await Run(args);
@@ -14,6 +15,7 @@ static async Task<int> Run(string[] args)
     {
         return args[0].ToLowerInvariant() switch
         {
+            "--version" or "version" => PrintVersion(),
             "scan" => await ScanCommand.RunAsync(args),
             "watch" => await WatchCommand.RunAsync(args),
             "export" => await ExportCommand.RunAsync(args),
@@ -30,6 +32,15 @@ static async Task<int> Run(string[] args)
         Console.Error.WriteLine(ex.Message);
         return 1;
     }
+}
+
+static int PrintVersion()
+{
+    var version = typeof(Program).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+        ?.InformationalVersion ?? "unknown";
+    Console.WriteLine($"synopsis {version}");
+    return 0;
 }
 
 static int UnknownCommand(string command)

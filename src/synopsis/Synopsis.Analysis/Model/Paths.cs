@@ -2,16 +2,43 @@ namespace Synopsis.Analysis.Model;
 
 public static class Paths
 {
+    // Linux filesystems are case-sensitive; macOS and Windows are not.
+    public static StringComparer FileSystemComparer =>
+        OperatingSystem.IsLinux() ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
+
+    public static StringComparison FileSystemComparison =>
+        OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
+
     public static string Normalize(string path) =>
         Path.GetFullPath(path)
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+    /// <summary>
+    /// Resolve transitive symlinks so a link inside the workspace root that
+    /// points outside cannot bypass sandbox checks. Returns the real path if
+    /// resolution succeeds; falls back to <see cref="Path.GetFullPath"/> on
+    /// any error (non-existent path, permission denied, etc.).
+    /// </summary>
+    public static string ResolveReal(string path)
+    {
+        var full = Path.GetFullPath(path);
+        try
+        {
+            var target = new DirectoryInfo(full).ResolveLinkTarget(returnFinalTarget: true)?.FullName;
+            return target is not null ? Path.GetFullPath(target) : full;
+        }
+        catch
+        {
+            return full;
+        }
+    }
 
     public static bool IsUnder(string candidatePath, string rootPath)
     {
         var candidate = Normalize(candidatePath);
         var root = Normalize(rootPath);
-        return candidate.Equals(root, StringComparison.OrdinalIgnoreCase)
-            || candidate.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+        return candidate.Equals(root, FileSystemComparison)
+            || candidate.StartsWith(root + Path.DirectorySeparatorChar, FileSystemComparison);
     }
 
     public static bool IsExcluded(string candidatePath, string rootPath, IReadOnlyList<string>? excludedPaths)

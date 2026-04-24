@@ -44,11 +44,12 @@ public sealed class CombinedGraph
 
     // Per-repo state behind the swap lock. _records shadows _perRepo so
     // list_repositories can surface last-scanned / node / edge counts
-    // without walking ScanResults.
+    // without walking ScanResults. Keys are normalised absolute paths;
+    // comparer mirrors the host filesystem (case-sensitive on Linux).
     private ConcurrentDictionary<string, ScanResult> _perRepo =
-        new(StringComparer.OrdinalIgnoreCase);
+        new(Paths.FileSystemComparer);
     private ConcurrentDictionary<string, RepositoryRecord> _records =
-        new(StringComparer.OrdinalIgnoreCase);
+        new(Paths.FileSystemComparer);
 
     private ScanResult _current;
     private int _loaded;  // 0 = not yet; 1 = LoadAsync has run
@@ -67,14 +68,14 @@ public sealed class CombinedGraph
     /// deterministic enumeration by callers (e.g. reindex_all, tests).
     /// </summary>
     public IReadOnlyList<string> KnownRepositories =>
-        _perRepo.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase).ToArray();
+        _perRepo.Keys.OrderBy(k => k, StringComparer.Ordinal).ToArray();
 
     /// <summary>
     /// Summary records for every tracked repository (path + last-scanned
     /// timestamp + node/edge counts). Ordered by path.
     /// </summary>
     public IReadOnlyList<RepositoryRecord> Repositories =>
-        _records.Values.OrderBy(r => r.RepoPath, StringComparer.OrdinalIgnoreCase).ToArray();
+        _records.Values.OrderBy(r => r.RepoPath, StringComparer.Ordinal).ToArray();
 
     /// <summary>
     /// Hydrate from the backing state store. Callable exactly once, at
@@ -92,8 +93,8 @@ public sealed class CombinedGraph
         // Build the replacement dictionaries off-lock so readers of
         // KnownRepositories / Repositories never observe a transient empty
         // state between Clear() and the refill loop.
-        var newPerRepo = new ConcurrentDictionary<string, ScanResult>(StringComparer.OrdinalIgnoreCase);
-        var newRecords = new ConcurrentDictionary<string, RepositoryRecord>(StringComparer.OrdinalIgnoreCase);
+        var newPerRepo = new ConcurrentDictionary<string, ScanResult>(Paths.FileSystemComparer);
+        var newRecords = new ConcurrentDictionary<string, RepositoryRecord>(Paths.FileSystemComparer);
         foreach (var (path, result) in snapshot.PerRepo)
         {
             var key = NormalizePath(path);
@@ -188,7 +189,7 @@ public sealed class CombinedGraph
         // order determines which repo's attributes win. Sort by key so the
         // merged graph is byte-stable across restarts and across iteration
         // order of the backing ConcurrentDictionary.
-        foreach (var kv in _perRepo.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase))
+        foreach (var kv in _perRepo.OrderBy(kv => kv.Key, StringComparer.Ordinal))
         {
             var result = kv.Value;
             foreach (var node in result.Nodes)

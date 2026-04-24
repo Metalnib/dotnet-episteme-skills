@@ -126,6 +126,82 @@ public sealed class McpToolsRepositoryManagementTests
             await tools.InvokeAsync("reindex_repository", args, ct: default));
     }
 
+    [Fact]
+    public async Task ReindexRepository_KnownRepository_PassesValidation()
+    {
+        // A path already in KnownRepositories must pass ResolveAllowedPath and
+        // reach the scanner — InvalidOperationException must NOT be thrown.
+        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(tmpDir);
+        try
+        {
+            var combined = new CombinedGraph();
+            await combined.ReplaceRepositoryAsync(tmpDir, BuildRepo(b => { }), CancellationToken.None);
+            var tools = new McpTools(combined, ScannerBuilder.Create());
+
+            var ex = await Record.ExceptionAsync(() =>
+                tools.InvokeAsync("reindex_repository",
+                    ArgumentsFor(new JsonObject { ["path"] = tmpDir }), ct: default));
+            Assert.False(ex is InvalidOperationException,
+                "ResolveAllowedPath rejected a known repository path.");
+        }
+        finally
+        {
+            Directory.Delete(tmpDir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ReindexRepository_PathUnderWorkspaceRoot_PassesValidation()
+    {
+        // A path under the configured workspace root must pass ResolveAllowedPath
+        // even when it isn't already registered in KnownRepositories.
+        var tmpRoot = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        var subDir = Path.Combine(tmpRoot, "sub-repo");
+        Directory.CreateDirectory(subDir);
+        try
+        {
+            var combined = new CombinedGraph();
+            var tools = new McpTools(combined, ScannerBuilder.Create(), workspaceRoot: tmpRoot);
+
+            var ex = await Record.ExceptionAsync(() =>
+                tools.InvokeAsync("reindex_repository",
+                    ArgumentsFor(new JsonObject { ["path"] = subDir }), ct: default));
+            Assert.False(ex is InvalidOperationException,
+                "ResolveAllowedPath rejected a path under the workspace root.");
+        }
+        finally
+        {
+            Directory.Delete(tmpRoot, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ReindexRepository_TrailingSlashPath_NormalizedAndAccepted()
+    {
+        // Path.GetFullPath + TrimEnd normalisation must collapse trailing
+        // separators so the known-repo lookup still matches.
+        var tmpDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(tmpDir);
+        try
+        {
+            var combined = new CombinedGraph();
+            await combined.ReplaceRepositoryAsync(tmpDir, BuildRepo(b => { }), CancellationToken.None);
+            var tools = new McpTools(combined, ScannerBuilder.Create());
+
+            var pathWithSlash = tmpDir.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            var ex = await Record.ExceptionAsync(() =>
+                tools.InvokeAsync("reindex_repository",
+                    ArgumentsFor(new JsonObject { ["path"] = pathWithSlash }), ct: default));
+            Assert.False(ex is InvalidOperationException,
+                "ResolveAllowedPath rejected a known path supplied with a trailing separator.");
+        }
+        finally
+        {
+            Directory.Delete(tmpDir, recursive: true);
+        }
+    }
+
     private static JsonElement ArgumentsFor(JsonNode node) =>
         JsonDocument.Parse(node.ToJsonString()).RootElement;
 

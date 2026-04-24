@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Synopsis.Analysis;
@@ -53,7 +54,6 @@ internal sealed class McpServer
                     }
                     finally
                     {
-                        connCts.Cancel();
                         connCts.Dispose();
                     }
                 }, ct);
@@ -148,7 +148,9 @@ internal sealed class McpServer
             ["serverInfo"] = new JsonObject
             {
                 ["name"] = "synopsis",
-                ["version"] = "1.0.0"
+                ["version"] = typeof(McpServer).Assembly
+                    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+                    ?.InformationalVersion ?? "unknown"
             }
         });
 

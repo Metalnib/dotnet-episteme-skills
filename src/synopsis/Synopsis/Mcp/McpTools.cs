@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Collections.Immutable;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Synopsis.Analysis;
@@ -40,6 +41,10 @@ internal sealed class McpTools
             ["list_repositories"] = (t, _, _) => Task.FromResult(t.ListRepositories()),
             ["reindex_repository"] = (t, p, ct) => t.ReindexRepositoryAsync(p, ct),
             ["reindex_all"] = (t, _, ct) => t.ReindexAllAsync(ct),
+            ["endpoint_callers"] = (t, p, _) => Task.FromResult(t.EndpointCallers(p)),
+            ["package_dependents"] = (t, p, _) => Task.FromResult(t.PackageDependents(p)),
+            ["table_entry_points"] = (t, p, _) => Task.FromResult(t.TableEntryPoints(p)),
+            ["repo_dependency_matrix"] = (t, _, _) => Task.FromResult(t.RepoDependencyMatrix()),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     /// <param name="workspaceRoot">
@@ -78,9 +83,21 @@ internal sealed class McpTools
             """{"type":"object","properties":{}}"""),
         Tool("breaking_diff", "Classify breaking changes between two graph snapshots. Emits typed kinds (NugetVersionBump, EndpointRouteChange, EndpointVerbChange, ApiSignatureChange, TableRename) with severity, certainty, and affected node IDs.",
             """{"type":"object","properties":{"before":{"type":"string","description":"Path to the baseline graph.json"},"after":{"type":"string","description":"Path to the head graph.json"}},"required":["before","after"]}"""),
+        Tool("endpoint_callers",
+            "Find all callers of an HTTP endpoint across repos. Returns matched Endpoint nodes and ExternalEndpoint nodes whose route and verb match, with resolution certainty and resolved target IDs where available.",
+            """{"type":"object","properties":{"route":{"type":"string","description":"Route path to match (partial), e.g. /api/orders"},"verb":{"type":"string","description":"HTTP verb filter, e.g. GET"}},"required":["route"]}"""),
+        Tool("package_dependents",
+            "Find all repos and projects that depend on a NuGet package. Returns matched Package nodes and each dependent project with its version. Use version for an exact-match filter.",
+            """{"type":"object","properties":{"packageId":{"type":"string","description":"NuGet package ID (partial match), e.g. PrimeLabs.Contracts"},"version":{"type":"string","description":"Exact version to filter by (optional)"}},"required":["packageId"]}"""),
+        Tool("table_entry_points",
+            "Find HTTP endpoints that eventually read or write a database table. Traces upstream through EF Core lineage (MapsToTable, QueriesEntity, UsesDbContext) and call edges to surface entry-point Endpoint nodes.",
+            """{"type":"object","properties":{"table":{"type":"string","description":"Table name (partial match), e.g. Orders"},"maxDepth":{"type":"integer","default":8,"description":"BFS depth cap (default 8)"}},"required":["table"]}"""),
+        Tool("repo_dependency_matrix",
+            "Show HTTP call dependency counts between repositories. Returns outbound call totals per repo and resolved cross-repo dependencies (pairs where both source and target repo are known).",
+            """{"type":"object","properties":{}}"""),
         Tool("list_repositories", "List repositories tracked by the combined graph with their last-scanned timestamp and node/edge counts.",
             """{"type":"object","properties":{}}"""),
-        Tool("reindex_repository", "Rescan one repository and atomically replace it in the combined graph. Use when a repo's source changed since it was last indexed. The optional `ref` is recorded as metadata only; the actual file state comes from the filesystem.",
+        Tool("reindex_repository", "Rescan one repository and atomically replace it in the combined graph. Scan invocations are serialized — concurrent calls queue and execute one at a time. The optional `ref` is recorded as metadata only; the actual file state comes from the filesystem.",
             """{"type":"object","properties":{"path":{"type":"string","description":"Absolute path to the repository root"},"ref":{"type":"string","description":"Optional git ref tag for metadata (commit SHA, branch name)"}},"required":["path"]}"""),
         Tool("reindex_all", "Rescan every tracked repository sequentially. Slow; use reindex_repository for single-repo updates.",
             """{"type":"object","properties":{}}"""),
@@ -313,17 +330,25 @@ internal sealed class McpTools
     /// Rejects everything else — without this guard, an MCP client could
     /// point the scanner at any filesystem location and exfiltrate its
     /// graph via the other query tools.
+    /// Symlinks are resolved for the workspace-root sandbox check so a
+    /// link that escapes the root (e.g. /safe/evil → /outside) is caught.
+    /// Known-repo lookup uses both the symlink-resolved and non-resolved
+    /// form so repos registered via a path whose components are symlinks
+    /// (e.g. /tmp on macOS → /private/tmp) are still matched correctly.
     /// </summary>
     private string ResolveAllowedPath(string rawPath)
     {
-        var canonical = Paths.Normalize(Path.GetFullPath(rawPath));
+        // real = fully resolved (no symlinks); normalized = lexically clean only.
+        var real = Paths.Normalize(Paths.ResolveReal(rawPath));
+        var normalized = Paths.Normalize(Path.GetFullPath(rawPath));
 
         if (_combined.KnownRepositories.Any(k =>
-                string.Equals(k, canonical, StringComparison.OrdinalIgnoreCase)))
-            return canonical;
+                string.Equals(k, normalized, Paths.FileSystemComparison) ||
+                string.Equals(k, real, Paths.FileSystemComparison)))
+            return real;
 
-        if (_workspaceRoot is not null && Paths.IsUnder(canonical, _workspaceRoot))
-            return canonical;
+        if (_workspaceRoot is not null && Paths.IsUnder(real, _workspaceRoot))
+            return real;
 
         throw new InvalidOperationException(
             $"Path '{rawPath}' is not a known repository" +
@@ -342,6 +367,233 @@ internal sealed class McpTools
 
         var result = BreakingChangeClassifier.Classify(before, after);
         return Serialize(result, SynopsisJsonContext.Default.BreakingDiffResult);
+    }
+
+    private JsonNode EndpointCallers(JsonElement? p)
+    {
+        var route = GetString(p, "route") ?? throw new ArgumentException("route is required");
+        var verb = GetString(p, "verb");
+        var graph = Graph;
+
+        var targets = graph.Nodes
+            .Where(n => n.Type == NodeType.Endpoint
+                && n.DisplayName.Contains(route, StringComparison.OrdinalIgnoreCase))
+            .Where(n => verb is null ||
+                n.Metadata.GetValueOrDefault("verb")?.Equals(verb, StringComparison.OrdinalIgnoreCase) == true)
+            .ToArray();
+
+        var targetIds = targets.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
+
+        var resolvedEdges = graph.Edges
+            .Where(e => e.Type is EdgeType.ResolvesToService or EdgeType.CrossesRepoBoundary
+                && targetIds.Contains(e.TargetId))
+            .ToLookup(e => e.SourceId, StringComparer.Ordinal);
+
+        var callers = graph.Nodes
+            .Where(n => n.Type == NodeType.ExternalEndpoint
+                && n.DisplayName.Contains(route, StringComparison.OrdinalIgnoreCase))
+            .Where(n => verb is null ||
+                n.Metadata.GetValueOrDefault("verb")?.Equals(verb, StringComparison.OrdinalIgnoreCase) == true)
+            .OrderBy(n => n.RepositoryName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(n => n.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var callersArray = new JsonArray();
+        foreach (var caller in callers)
+        {
+            var resolved = resolvedEdges[caller.Id].FirstOrDefault();
+            JsonNode entry = new JsonObject
+            {
+                ["caller"] = Serialize(caller, SynopsisJsonContext.Default.GraphNode),
+                ["resolved"] = resolved is not null,
+                ["certainty"] = (resolved?.Certainty ?? caller.Certainty).ToString(),
+            };
+            if (resolved is not null)
+                ((JsonObject)entry)["resolvedToId"] = resolved.TargetId;
+            callersArray.Add(entry);
+        }
+
+        return new JsonObject
+        {
+            ["endpoints"] = SerializeArray(targets),
+            ["callers"] = callersArray,
+            ["totalEndpoints"] = targets.Length,
+            ["totalCallers"] = callers.Length,
+            ["resolvedCallers"] = callers.Count(c => resolvedEdges[c.Id].Any()),
+        };
+    }
+
+    private JsonNode PackageDependents(JsonElement? p)
+    {
+        var packageId = GetString(p, "packageId") ?? throw new ArgumentException("packageId is required");
+        var version = GetString(p, "version");
+        var graph = Graph;
+        var nodesById = graph.NodesById!;
+
+        var packages = graph.Nodes
+            .Where(n => n.Type == NodeType.Package
+                && n.Metadata.GetValueOrDefault("packageId")?.Contains(packageId, StringComparison.OrdinalIgnoreCase) == true)
+            .Where(n => version is null ||
+                string.Equals(n.Metadata.GetValueOrDefault("version"), version, StringComparison.Ordinal))
+            .ToArray();
+
+        var packageIdSet = packages.Select(n => n.Id).ToHashSet(StringComparer.Ordinal);
+
+        var depEdges = graph.Edges
+            .Where(e => e.Type == EdgeType.DependsOnPackage && packageIdSet.Contains(e.TargetId))
+            .OrderBy(e => nodesById.GetValueOrDefault(e.SourceId)?.RepositoryName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => nodesById.GetValueOrDefault(e.SourceId)?.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var dependents = new JsonArray();
+        foreach (var edge in depEdges)
+        {
+            var src = nodesById.GetValueOrDefault(edge.SourceId);
+            var pkg = nodesById.GetValueOrDefault(edge.TargetId);
+            JsonNode entry = new JsonObject
+            {
+                ["repo"] = src?.RepositoryName ?? "?",
+                ["project"] = src?.DisplayName ?? "?",
+                ["packageId"] = pkg?.Metadata.GetValueOrDefault("packageId") ?? packageId,
+                ["version"] = pkg?.Metadata.GetValueOrDefault("version") ?? "?",
+                ["certainty"] = edge.Certainty.ToString(),
+            };
+            dependents.Add(entry);
+        }
+
+        return new JsonObject
+        {
+            ["packageId"] = packageId,
+            ["matchedVersions"] = packages.Length,
+            ["dependentCount"] = dependents.Count,
+            ["dependents"] = dependents,
+        };
+    }
+
+    private JsonNode TableEntryPoints(JsonElement? p)
+    {
+        var table = GetString(p, "table") ?? throw new ArgumentException("table is required");
+        var maxDepth = GetInt(p, "maxDepth") ?? 8;
+        var graph = Graph;
+
+        var tables = graph.Nodes
+            .Where(n => n.Type == NodeType.Table
+                && n.DisplayName.Contains(table, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        if (tables.Length == 0)
+            return new JsonObject
+            {
+                ["table"] = table,
+                ["matchedTables"] = new JsonArray(),
+                ["entryPoints"] = new JsonArray(),
+                ["entryPointCount"] = 0,
+            };
+
+        // Targeted upstream BFS: only traverse data-access and call edges so
+        // structural Contains/Defines edges don't pull every node in the project
+        // into scope and inflate the entry-point list.
+        var incoming = graph.IncomingEdges;
+        var nodesById = graph.NodesById!;
+        var emptyEdges = ImmutableArray<GraphEdge>.Empty;
+
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        var queue = new Queue<(string id, int depth)>();
+        var entryPoints = new List<GraphNode>();
+
+        foreach (var t in tables)
+            if (visited.Add(t.Id))
+                queue.Enqueue((t.Id, 0));
+
+        while (queue.Count > 0)
+        {
+            var (currentId, depth) = queue.Dequeue();
+            if (depth >= maxDepth)
+                continue;
+            var edges = incoming?.GetValueOrDefault(currentId, emptyEdges) ?? emptyEdges;
+            foreach (var edge in edges)
+            {
+                if (edge.Type is not (EdgeType.MapsToTable or EdgeType.QueriesEntity
+                        or EdgeType.UsesDbContext or EdgeType.Calls))
+                    continue;
+                if (!visited.Add(edge.SourceId))
+                    continue;
+                if (!nodesById.TryGetValue(edge.SourceId, out var src))
+                    continue;
+
+                if (src.Type == NodeType.Endpoint)
+                    entryPoints.Add(src);
+                else
+                    queue.Enqueue((edge.SourceId, depth + 1));
+            }
+        }
+
+        entryPoints.Sort((a, b) => StringComparer.OrdinalIgnoreCase.Compare(
+            $"{a.RepositoryName}/{a.DisplayName}", $"{b.RepositoryName}/{b.DisplayName}"));
+
+        return new JsonObject
+        {
+            ["table"] = table,
+            ["matchedTables"] = SerializeArray(tables),
+            ["entryPointCount"] = entryPoints.Count,
+            ["entryPoints"] = SerializeArray(entryPoints.ToArray()),
+        };
+    }
+
+    private JsonNode RepoDependencyMatrix()
+    {
+        var graph = Graph;
+        var nodesById = graph.NodesById!;
+
+        // Outbound HTTP call count per source repo (all CallsHttp edges)
+        var outbound = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (var edge in graph.Edges.Where(e => e.Type == EdgeType.CallsHttp))
+        {
+            var repo = nodesById.GetValueOrDefault(edge.SourceId)?.RepositoryName ?? "?";
+            outbound[repo] = outbound.GetValueOrDefault(repo) + 1;
+        }
+
+        // Resolved cross-repo pairs: (from, to) → count + best certainty.
+        // Count only CrossesRepoBoundary (not ResolvesToService) so each
+        // resolved HTTP call contributes exactly one entry, avoiding double-count
+        // when CrossRepoResolver emits both edge types for the same match.
+        var resolved = new Dictionary<(string from, string to), (int count, Certainty best)>();
+        foreach (var edge in graph.Edges.Where(e => e.Type == EdgeType.CrossesRepoBoundary))
+        {
+            var from = nodesById.GetValueOrDefault(edge.SourceId)?.RepositoryName ?? "?";
+            var to = nodesById.GetValueOrDefault(edge.TargetId)?.RepositoryName ?? "?";
+            if (string.Equals(from, to, StringComparison.OrdinalIgnoreCase)) continue;
+
+            var key = (from, to);
+            var (cnt, best) = resolved.GetValueOrDefault(key);
+            resolved[key] = (cnt + 1, edge.Certainty > best ? edge.Certainty : best);
+        }
+
+        var outboundArray = new JsonArray();
+        foreach (var (repo, count) in outbound.OrderByDescending(kv => kv.Value))
+        {
+            JsonNode entry = new JsonObject { ["repo"] = repo, ["callCount"] = count };
+            outboundArray.Add(entry);
+        }
+
+        var resolvedArray = new JsonArray();
+        foreach (var ((from, to), (count, best)) in resolved.OrderByDescending(kv => kv.Value.count))
+        {
+            JsonNode entry = new JsonObject
+            {
+                ["from"] = from,
+                ["to"] = to,
+                ["callCount"] = count,
+                ["certainty"] = best.ToString(),
+            };
+            resolvedArray.Add(entry);
+        }
+
+        return new JsonObject
+        {
+            ["outboundByRepo"] = outboundArray,
+            ["resolvedDependencies"] = resolvedArray,
+        };
     }
 
     // Helpers

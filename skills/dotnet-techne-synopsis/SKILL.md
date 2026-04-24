@@ -1,13 +1,13 @@
 ---
 name: dotnet-techne-synopsis
-description: Use when you need blast-radius analysis, dependency graphs, cross-repo impact, or architectural overview of .NET workspaces. Keywords: blast radius, dependency graph, impact analysis, cross-repo, call graph, endpoint map, EF Core lineage.
+description: Use when you need blast-radius analysis, dependency graphs, cross-repo impact, breaking-change diff, or architectural overview of .NET workspaces. Keywords: blast radius, dependency graph, impact analysis, cross-repo, call graph, endpoint map, EF Core lineage, breaking change, daemon, reindex.
 disable-model-invocation: false
 user-invocable: true
 license: MIT
-compatibility: Pre-built binaries included for osx-arm64, win-x64, linux-x64. No SDK required.
+compatibility: Pre-built binaries for osx-arm64, osx-x64, win-x64, win-arm64, linux-x64, linux-arm64. No SDK required.
 metadata:
   author: Metalnib
-  version: "1.0.0"
+  version: "1.5.0"
   trigger_keywords:
     - blast radius
     - dependency graph
@@ -18,11 +18,14 @@ metadata:
     - ef core lineage
     - what does this change affect
     - architectural overview
+    - breaking change diff
+    - reindex repository
+    - daemon mode
 ---
 
 # Synopsis - .NET Workspace Dependency & Blast-Radius Explorer
 
-Static analysis tool that scans .NET workspaces via Roslyn, builds a dependency graph, and answers blast-radius queries. Designed for AI agents operating on large multi-repo .NET codebases.
+Static analysis tool that scans .NET workspaces via Roslyn, builds a dependency graph, and answers blast-radius and breaking-change queries. Supports both one-shot CLI use and long-running daemon mode for multi-repo workspaces.
 
 ## Requirements
 
@@ -31,8 +34,11 @@ No SDK or manual installation needed. The detect script auto-downloads the corre
 | Platform | Binary | Downloaded from |
 |---|---|---|
 | macOS Apple Silicon | `bin/osx-arm64/synopsis` | GitHub Release `synopsis-osx-arm64.tar.gz` |
+| macOS Intel | `bin/osx-x64/synopsis` | GitHub Release `synopsis-osx-x64.tar.gz` |
 | Windows x64 | `bin/win-x64/synopsis.exe` | GitHub Release `synopsis-win-x64.zip` |
+| Windows arm64 | `bin/win-arm64/synopsis.exe` | GitHub Release `synopsis-win-arm64.zip` |
 | Linux x64 | `bin/linux-x64/synopsis` | GitHub Release `synopsis-linux-x64.tar.gz` |
+| Linux arm64 | `bin/linux-arm64/synopsis` | GitHub Release `synopsis-linux-arm64.tar.gz` |
 
 External dependencies for auto-download:
 - **macOS/Linux:** `curl` (pre-installed) or `wget`
@@ -62,7 +68,13 @@ Use when the user asks to:
 - Review cross-repo boundaries
 - Audit ambiguous/unresolved dependencies
 - Compare architecture between two snapshots (diff)
+- Classify breaking changes between two snapshots
 - Scope a PR's impact via git diff
+- Run a persistent daemon serving multiple repos under one graph
+- Find all callers of an HTTP endpoint across repos (`endpoint_callers`)
+- Find which services depend on a NuGet package and at what version (`package_dependents`)
+- Find HTTP endpoints that write to a specific database table (`table_entry_points`)
+- Get a service-to-service HTTP call dependency map (`repo_dependency_matrix`)
 
 ## Workflow
 
@@ -84,7 +96,7 @@ Use when the user asks to:
 synopsis scan /path/to/workspace -o graph.json
 ```
 
-This produces `graph.json` containing all nodes (repos, projects, controllers, methods, endpoints, HTTP clients, DB contexts, entities, tables) and edges (calls, injects, implements, cross-repo, etc.).
+This produces `graph.json` containing all nodes (repos, projects, controllers, methods, endpoints, HTTP clients, DB contexts, entities, tables, NuGet packages) and edges (calls, injects, implements, cross-repo, depends-on-package, etc.).
 
 ### Step 2: Query the graph
 
@@ -124,35 +136,63 @@ Compare architecture before/after a change:
 synopsis diff before.json after.json --json
 ```
 
-### Step 5: MCP server mode
+### Step 5: Breaking-change classification
 
-For persistent AI agent integration (stdin/stdout JSON-RPC):
+Classify typed breaking changes between two snapshots:
+```bash
+synopsis breaking-diff before.json after.json --json
+synopsis breaking-diff before.json after.json -o report.json
+```
+
+Produces typed `BreakingChangeKind` values:
+- **Paired changes:** `NugetVersionBump`, `EndpointRouteChange`, `EndpointVerbChange`, `ApiSignatureChange`, `TableRename`
+- **Removals:** `PackageRemoved`, `EndpointRemoved`, `ApiRemoved`, `TableRemoved`
+
+Heuristic pairings carry `Ambiguous` certainty; unmatched nodes flow into removal kinds.
+
+### Step 6: MCP daemon mode (multi-repo)
+
+For persistent AI agent integration over multiple repositories. The daemon holds a `CombinedGraph` that merges per-repo scans in memory and persists state to disk.
+
+**stdio (one-shot, single repo):**
 ```bash
 synopsis mcp --root /path/to/workspace
-```
-
-Or from a pre-scanned graph:
-```bash
 synopsis mcp --graph graph.json
 ```
+
+**Unix socket daemon (multi-repo, persistent):**
+```bash
+synopsis mcp --root /path/to/workspace --socket /tmp/synopsis.sock --state-dir ~/.synopsis/workspace
+```
+
+**TCP daemon:**
+```bash
+synopsis mcp --root /path/to/workspace --tcp localhost:5100
+```
+
+State is persisted to `--state-dir` and restored on restart. On restart, repos are loaded from disk without re-scanning; use `reindex_all` to force a fresh scan of all known repos.
 
 ## Quick Reference
 
 ```bash
-# === Full workflow ===
-synopsis scan /workspace -o graph.json                              # 1. Scan
-synopsis query symbol --fqn "OrdersController" --blast-radius       # 2. Blast radius
-synopsis query impact --node "Orders" --direction upstream --json   # 3. Upstream impact
-synopsis git-scan /workspace --base main --json                     # 4. PR impact
+# === One-shot scan and query ===
+synopsis scan /workspace -o graph.json                              # Scan
+synopsis query symbol --fqn "OrdersController" --blast-radius       # Blast radius
+synopsis query impact --node "Orders" --direction upstream --json   # Upstream impact
+synopsis git-scan /workspace --base main --json                     # PR impact
+synopsis breaking-diff before.json after.json --json                # Breaking changes
 
 # === Export formats ===
 synopsis export json /workspace -o graph.json
 synopsis export csv /workspace -o output/
 synopsis export jsonl /workspace -o graph.jsonl
 
+# === Daemon (multi-repo) ===
+synopsis mcp --root /workspace --socket /tmp/synopsis.sock --state-dir ~/.synopsis/ws
+
 # === All commands support --json for machine-readable output ===
-synopsis scan /workspace --json          # JSON envelope to stdout
-synopsis query impact --node X --json    # JSON envelope to stdout
+synopsis scan /workspace --json
+synopsis query impact --node X --json
 ```
 
 ## Output Contract
@@ -179,6 +219,14 @@ When running in MCP mode (`synopsis mcp`), the following tools are exposed:
 | `cross_repo_edges` | All cross-repository boundary edges |
 | `ambiguous_review` | Unresolved and ambiguous edge audit |
 | `scan_stats` | Scan statistics and metadata |
+| `breaking_diff` | Classify breaking changes between two graph snapshots |
+| `endpoint_callers` | All callers of an HTTP endpoint across repos, with certainty |
+| `package_dependents` | All repos/projects that depend on a NuGet package, with versions |
+| `table_entry_points` | HTTP endpoints that eventually read or write a database table |
+| `repo_dependency_matrix` | Per-repo outbound call counts and resolved cross-repo dependency pairs |
+| `list_repositories` | List all repos in the CombinedGraph with scan metadata |
+| `reindex_repository` | Re-scan a single repository and update the graph |
+| `reindex_all` | Re-scan all known repositories |
 
 ## HTTP Cross-Service Resolution
 
@@ -192,8 +240,9 @@ See [http-resolution.md](http-resolution.md) for the full guide on supported pat
 
 ## Notes
 
-- Synopsis uses Roslyn MSBuildWorkspace for semantic analysis - it understands DI registration, interface dispatch, call graphs, and EF Core mappings
+- Synopsis uses Roslyn MSBuildWorkspace for semantic analysis — it understands DI registration, interface dispatch, call graphs, and EF Core mappings
 - The tool targets .NET Core/.NET 5+ projects only (no .NET Framework 4.x support)
-- First scan of a large workspace takes 15-60s; subsequent queries on loaded graph.json are instant
-- MCP mode scans once at startup, then serves queries with no re-scan overhead
+- First scan of a large workspace takes 15–60s; subsequent queries on a loaded `graph.json` are instant
+- MCP daemon mode scans once at startup (or on `reindex_*` calls), then serves queries with no re-scan overhead
+- NuGet packages are first-class graph nodes (`Package` type, `DependsOnPackage` edges) from v1.4.0
 - Graph node IDs are SHA256-based and stable across scans of the same codebase

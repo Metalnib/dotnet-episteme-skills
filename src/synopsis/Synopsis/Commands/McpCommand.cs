@@ -126,7 +126,11 @@ internal static class McpCommand
         var nameToPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var repo in discovery.Repositories)
         {
-            byRepo[repo.Name] = new GraphBuilder();
+            if (!byRepo.TryAdd(repo.Name, new GraphBuilder()))
+            {
+                Console.Error.WriteLine($"[mcp] Warning: duplicate repository name '{repo.Name}' at {repo.RootPath} — skipping.");
+                continue;
+            }
             nameToPath[repo.Name] = repo.RootPath;
         }
 
@@ -163,14 +167,34 @@ internal static class McpCommand
                     e.Location, e.RepositoryName, e.ProjectName, e.Certainty, e.Metadata);
         }
 
+        // Partition warnings to their owning repo by path prefix; orphans
+        // (no path, or path not under any repo) go to every partition.
+        var warningsByName = byRepo.Keys
+            .ToDictionary(k => k, _ => new List<ScanWarning>(), StringComparer.OrdinalIgnoreCase);
+        var orphanWarnings = new List<ScanWarning>();
+        foreach (var warning in big.Warnings)
+        {
+            var owner = warning.Path is not null
+                ? discovery.Repositories
+                    .Where(r => Paths.IsUnder(warning.Path, r.RootPath))
+                    .OrderByDescending(r => r.RootPath.Length)
+                    .Select(r => r.Name)
+                    .FirstOrDefault()
+                : null;
+            if (owner is not null && warningsByName.TryGetValue(owner, out var bucket))
+                bucket.Add(warning);
+            else
+                orphanWarnings.Add(warning);
+        }
+
         var out_ = new Dictionary<string, ScanResult>(StringComparer.OrdinalIgnoreCase);
-        var warnings = big.Warnings;
         foreach (var (name, b) in byRepo)
         {
             var repoPath = nameToPath[name];
+            var repoWarnings = warningsByName[name].Concat(orphanWarnings).ToImmutableArray();
             var info = new ScanInfo(repoPath, big.Metadata.StartedAtUtc, big.Metadata.CompletedAtUtc,
                 ImmutableArray<Timing>.Empty, big.Metadata.Properties);
-            out_[repoPath] = b.Build(info, warnings);
+            out_[repoPath] = b.Build(info, repoWarnings);
         }
         return out_;
     }

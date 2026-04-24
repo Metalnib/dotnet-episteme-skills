@@ -10,5 +10,6 @@
     <!-- 1591: missing XML comments; NU1603: Roslyn 5.3.0 depends on unpublished analyzer prerelease -->
     <NoWarn>1591;NU1603</NoWarn>
     <DebugType>embedded</DebugType>
+    <Version>1.5.0</Version>
   </PropertyGroup>
 </Project>
