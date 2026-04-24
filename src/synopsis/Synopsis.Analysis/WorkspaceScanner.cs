@@ -79,6 +79,13 @@ public sealed class WorkspaceScanner
                 $"{pass.Name} completed in {passWatch.Elapsed.TotalSeconds:F1}s."));
         }
 
+        // Cross-repo resolution runs once over the fully merged builder so
+        // the same logic feeds both full-scan and CombinedGraph incremental
+        // paths. Must happen after every pass has contributed its nodes.
+        var resolveWatch = Stopwatch.StartNew();
+        CrossRepoResolver.Resolve(graph);
+        timings.Add(new Timing("cross-repo-resolve", resolveWatch.Elapsed));
+
         var completedAt = DateTimeOffset.UtcNow;
         var scanInfo = new ScanInfo(options.RootPath, startedAt, completedAt, [.. timings],
             new Dictionary<string, string>
@@ -93,6 +100,19 @@ public sealed class WorkspaceScanner
 
         return graph.Build(scanInfo, [.. warnings]);
     }
+
+    /// <summary>
+    /// Scan a single repository (by path to its root). Thin wrapper over
+    /// <see cref="ScanAsync"/> — <see cref="Scanning.WorkspaceDiscovery"/>
+    /// already treats the root-with-a-<c>.git</c>-child as a repo — that
+    /// intentionally produces a <see cref="ScanResult"/> containing one
+    /// <see cref="NodeType.Repository"/> node and its descendants, suitable
+    /// for <see cref="Graph.CombinedGraph.ReplaceRepositoryAsync"/>.
+    /// </summary>
+    public Task<ScanResult> ScanRepositoryAsync(string repoRootPath,
+        ScanOptions? options = null, CancellationToken ct = default,
+        IProgress<ProgressEvent>? progress = null) =>
+        ScanAsync(repoRootPath, options, ct, progress);
 
     public static string WorkspaceNodeId(string rootPath) => NodeId.From("workspace", rootPath);
     public static string RepositoryNodeId(string repoPath) => NodeId.From("repository", repoPath);

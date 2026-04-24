@@ -117,7 +117,6 @@ internal sealed class PackagePass : IAnalysisPass
         return ParseCsproj(csproj, cpm);
     }
 
-    // --- Pure parsing helpers (static, unit-testable, no I/O) ---
 
     /// <summary>
     /// Parse a <c>project.assets.json</c> string and extract per-package
@@ -310,7 +309,6 @@ internal sealed class PackagePass : IAnalysisPass
         return null;
     }
 
-    // --- Emission ---
 
     private static void EmitEntries(LoadedProject project, GraphBuilder graph, string projectId,
         IReadOnlyList<PackageEntry> entries) =>
@@ -370,7 +368,6 @@ internal sealed class PackagePass : IAnalysisPass
         }
     }
 
-    // --- Helpers ---
 
     private static string ExtractDependencyName(string depSpec)
     {
@@ -414,7 +411,6 @@ internal sealed class PackagePass : IAnalysisPass
         _ => "unknown"
     };
 
-    // --- Types ---
 
     /// <summary>Resolved package reference extracted from a source file.</summary>
     public sealed record PackageEntry(

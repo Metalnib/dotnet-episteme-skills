@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Synopsis.Analysis;
 using Synopsis.Analysis.Graph;
 using Synopsis.Analysis.Model;
 using Synopsis.Output;
@@ -9,28 +10,50 @@ namespace Synopsis.Mcp;
 
 internal sealed class McpTools
 {
-    private readonly ScanResult _graph;
-    private readonly GraphQuery _query;
+    private readonly CombinedGraph _combined;
+    private readonly WorkspaceScanner _scanner;
+    private readonly string? _workspaceRoot;
 
-    private static readonly FrozenDictionary<string, Func<McpTools, JsonElement?, JsonNode>> Handlers =
-        new Dictionary<string, Func<McpTools, JsonElement?, JsonNode>>(StringComparer.Ordinal)
+    // Fresh snapshot per call — _combined.Current is a Volatile.Read, so
+    // readers never observe a half-rebuilt graph. Creating a GraphQuery is
+    // cheap (just holds the reference); no point caching.
+    private ScanResult Graph => _combined.Current;
+    private GraphQuery Query() => new(_combined.Current);
+
+    // Async dispatch: cheap reads return a completed Task so the read path
+    // stays synchronous in practice, while mutating tools (reindex_*) can
+    // truly await the scan without a sync-over-async GetResult() blocking
+    // the handler thread for minutes.
+    private static readonly FrozenDictionary<string, Func<McpTools, JsonElement?, CancellationToken, Task<JsonNode>>> Handlers =
+        new Dictionary<string, Func<McpTools, JsonElement?, CancellationToken, Task<JsonNode>>>(StringComparer.Ordinal)
         {
-            ["blast_radius"] = (t, p) => t.BlastRadius(p),
-            ["find_paths"] = (t, p) => t.FindPaths(p),
-            ["list_endpoints"] = (t, p) => t.ListEndpoints(p),
-            ["list_nodes"] = (t, p) => t.ListNodes(p),
-            ["node_detail"] = (t, p) => t.NodeDetail(p),
-            ["db_lineage"] = (t, p) => t.DbLineage(p),
-            ["cross_repo_edges"] = (t, p) => t.CrossRepoEdges(p),
-            ["ambiguous_review"] = (t, p) => t.AmbiguousReview(p),
-            ["scan_stats"] = (t, p) => t.ScanStats(p),
-            ["breaking_diff"] = (_, p) => BreakingDiff(p),
+            ["blast_radius"] = (t, p, _) => Task.FromResult(t.BlastRadius(p)),
+            ["find_paths"] = (t, p, _) => Task.FromResult(t.FindPaths(p)),
+            ["list_endpoints"] = (t, p, _) => Task.FromResult(t.ListEndpoints(p)),
+            ["list_nodes"] = (t, p, _) => Task.FromResult(t.ListNodes(p)),
+            ["node_detail"] = (t, p, _) => Task.FromResult(t.NodeDetail(p)),
+            ["db_lineage"] = (t, p, _) => Task.FromResult(t.DbLineage(p)),
+            ["cross_repo_edges"] = (t, p, _) => Task.FromResult(t.CrossRepoEdges(p)),
+            ["ambiguous_review"] = (t, p, _) => Task.FromResult(t.AmbiguousReview(p)),
+            ["scan_stats"] = (t, p, _) => Task.FromResult(t.ScanStats(p)),
+            ["breaking_diff"] = (_, p, _) => Task.FromResult(BreakingDiff(p)),
+            ["list_repositories"] = (t, _, _) => Task.FromResult(t.ListRepositories()),
+            ["reindex_repository"] = (t, p, ct) => t.ReindexRepositoryAsync(p, ct),
+            ["reindex_all"] = (t, _, ct) => t.ReindexAllAsync(ct),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
-    public McpTools(ScanResult graph)
+    /// <param name="workspaceRoot">
+    /// Optional sandbox root for <c>reindex_repository</c>. When set, the
+    /// tool only accepts paths already registered in <see cref="CombinedGraph.KnownRepositories"/>
+    /// or under this root. When null, only already-known repositories can be
+    /// reindexed — protects against an MCP client pointing the scanner at
+    /// arbitrary filesystem paths.
+    /// </param>
+    public McpTools(CombinedGraph combined, WorkspaceScanner scanner, string? workspaceRoot = null)
     {
-        _graph = graph;
-        _query = new GraphQuery(graph);
+        _combined = combined;
+        _scanner = scanner;
+        _workspaceRoot = workspaceRoot is null ? null : Path.GetFullPath(workspaceRoot);
     }
 
     public static IReadOnlyList<McpToolDefinition> GetDefinitions() =>
@@ -55,13 +78,19 @@ internal sealed class McpTools
             """{"type":"object","properties":{}}"""),
         Tool("breaking_diff", "Classify breaking changes between two graph snapshots. Emits typed kinds (NugetVersionBump, EndpointRouteChange, EndpointVerbChange, ApiSignatureChange, TableRename) with severity, certainty, and affected node IDs.",
             """{"type":"object","properties":{"before":{"type":"string","description":"Path to the baseline graph.json"},"after":{"type":"string","description":"Path to the head graph.json"}},"required":["before","after"]}"""),
+        Tool("list_repositories", "List repositories tracked by the combined graph with their last-scanned timestamp and node/edge counts.",
+            """{"type":"object","properties":{}}"""),
+        Tool("reindex_repository", "Rescan one repository and atomically replace it in the combined graph. Use when a repo's source changed since it was last indexed. The optional `ref` is recorded as metadata only; the actual file state comes from the filesystem.",
+            """{"type":"object","properties":{"path":{"type":"string","description":"Absolute path to the repository root"},"ref":{"type":"string","description":"Optional git ref tag for metadata (commit SHA, branch name)"}},"required":["path"]}"""),
+        Tool("reindex_all", "Rescan every tracked repository sequentially. Slow; use reindex_repository for single-repo updates.",
+            """{"type":"object","properties":{}}"""),
     ];
 
     public bool CanHandle(string toolName) => Handlers.ContainsKey(toolName);
 
-    public JsonNode Invoke(string toolName, JsonElement? arguments) =>
+    public Task<JsonNode> InvokeAsync(string toolName, JsonElement? arguments, CancellationToken ct) =>
         Handlers.TryGetValue(toolName, out var handler)
-            ? handler(this, arguments)
+            ? handler(this, arguments, ct)
             : throw new InvalidOperationException($"Unknown tool: {toolName}");
 
     private JsonNode BlastRadius(JsonElement? p)
@@ -70,7 +99,7 @@ internal sealed class McpTools
         var direction = GetString(p, "direction") ?? "downstream";
         var depth = GetInt(p, "depth") ?? 6;
         var upstream = string.Equals(direction, "upstream", StringComparison.OrdinalIgnoreCase);
-        var impact = _query.FindImpact(symbol, upstream, maxDepth: depth);
+        var impact = Query().FindImpact(symbol, upstream, maxDepth: depth);
         return Serialize(impact, SynopsisJsonContext.Default.ImpactGraph);
     }
 
@@ -79,7 +108,7 @@ internal sealed class McpTools
         var from = GetString(p, "from") ?? throw new ArgumentException("from is required");
         var to = GetString(p, "to") ?? throw new ArgumentException("to is required");
         var depth = GetInt(p, "depth") ?? 8;
-        var paths = _query.FindPaths(from, to, maxDepth: depth);
+        var paths = Query().FindPaths(from, to, maxDepth: depth);
         return Serialize(paths, SynopsisJsonContext.Default.PathSet);
     }
 
@@ -87,7 +116,7 @@ internal sealed class McpTools
     {
         var project = GetString(p, "project");
         var verb = GetString(p, "verb");
-        var endpoints = _graph.Nodes.Where(n => n.Type == NodeType.Endpoint);
+        var endpoints = Graph.Nodes.Where(n => n.Type == NodeType.Endpoint);
         if (!string.IsNullOrWhiteSpace(project))
             endpoints = endpoints.Where(n => n.ProjectName?.Contains(project, StringComparison.OrdinalIgnoreCase) == true);
         if (!string.IsNullOrWhiteSpace(verb))
@@ -102,7 +131,7 @@ internal sealed class McpTools
         var query = GetString(p, "query");
         var limit = GetInt(p, "limit") ?? 50;
 
-        var nodes = _graph.Nodes.AsEnumerable();
+        var nodes = Graph.Nodes.AsEnumerable();
         if (!string.IsNullOrWhiteSpace(type) && Enum.TryParse<NodeType>(type, ignoreCase: true, out var nt))
             nodes = nodes.Where(n => n.Type == nt);
         if (!string.IsNullOrWhiteSpace(project))
@@ -115,9 +144,13 @@ internal sealed class McpTools
     private JsonNode NodeDetail(JsonElement? p)
     {
         var id = GetString(p, "id") ?? throw new ArgumentException("id is required");
-        var node = _query.ResolveNode(id);
-        var outgoing = _graph.OutgoingEdges?.GetValueOrDefault(node.Id, []) ?? [];
-        var incoming = _graph.IncomingEdges?.GetValueOrDefault(node.Id, []) ?? [];
+        // Capture one snapshot; every subsequent read uses it. A concurrent
+        // reindex that swaps _current between the Volatile.Reads would
+        // otherwise leave node and edges from different generations.
+        var graph = Graph;
+        var node = new GraphQuery(graph).ResolveNode(id);
+        var outgoing = graph.OutgoingEdges?.GetValueOrDefault(node.Id, []) ?? [];
+        var incoming = graph.IncomingEdges?.GetValueOrDefault(node.Id, []) ?? [];
         var result = new JsonObject
         {
             ["node"] = Serialize(node, SynopsisJsonContext.Default.GraphNode),
@@ -131,8 +164,9 @@ internal sealed class McpTools
     {
         var table = GetString(p, "table");
         var entity = GetString(p, "entity");
+        var graph = Graph;
 
-        var dbNodes = _graph.Nodes.Where(n =>
+        var dbNodes = graph.Nodes.Where(n =>
             n.Type is NodeType.DbContext or NodeType.Entity or NodeType.Table);
 
         if (!string.IsNullOrWhiteSpace(table))
@@ -143,7 +177,7 @@ internal sealed class McpTools
                 && n.DisplayName.Contains(entity, StringComparison.OrdinalIgnoreCase));
 
         var nodeIds = dbNodes.Select(n => n.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var edges = _graph.Edges.Where(e =>
+        var edges = graph.Edges.Where(e =>
             e.Type is EdgeType.UsesDbContext or EdgeType.QueriesEntity or EdgeType.MapsToTable
             && (nodeIds.Contains(e.SourceId) || nodeIds.Contains(e.TargetId)));
 
@@ -156,12 +190,12 @@ internal sealed class McpTools
     }
 
     private JsonNode CrossRepoEdges(JsonElement? _) =>
-        SerializeArray(_graph.Edges.Where(e => e.Type == EdgeType.CrossesRepoBoundary).ToArray());
+        SerializeArray(Graph.Edges.Where(e => e.Type == EdgeType.CrossesRepoBoundary).ToArray());
 
     private JsonNode AmbiguousReview(JsonElement? p)
     {
         var limit = GetInt(p, "limit") ?? 50;
-        var report = _query.GetAmbiguityReport();
+        var report = Query().GetAmbiguityReport();
         var result = new JsonObject
         {
             ["unresolvedCount"] = report.UnresolvedEdges.Length,
@@ -175,15 +209,127 @@ internal sealed class McpTools
 
     private JsonNode ScanStats(JsonElement? _)
     {
+        var graph = Graph;
         var result = new JsonObject
         {
-            ["statistics"] = Serialize(_graph.Statistics, SynopsisJsonContext.Default.ScanStatistics),
-            ["metadata"] = Serialize(_graph.Metadata, SynopsisJsonContext.Default.ScanInfo),
-            ["nodeCount"] = _graph.Nodes.Length,
-            ["edgeCount"] = _graph.Edges.Length,
-            ["warningCount"] = _graph.Warnings.Length,
+            ["statistics"] = Serialize(graph.Statistics, SynopsisJsonContext.Default.ScanStatistics),
+            ["metadata"] = Serialize(graph.Metadata, SynopsisJsonContext.Default.ScanInfo),
+            ["nodeCount"] = graph.Nodes.Length,
+            ["edgeCount"] = graph.Edges.Length,
+            ["warningCount"] = graph.Warnings.Length,
         };
         return result;
+    }
+
+
+    private JsonNode ListRepositories()
+    {
+        var repos = new JsonArray();
+        foreach (var record in _combined.Repositories)
+        {
+            JsonNode entry = new JsonObject
+            {
+                ["path"] = record.RepoPath,
+                ["lastScannedAtUtc"] = record.LastScannedAtUtc.ToString("O"),
+                ["nodeCount"] = record.NodeCount,
+                ["edgeCount"] = record.EdgeCount,
+            };
+            repos.Add(entry);
+        }
+        return new JsonObject { ["repositories"] = repos };
+    }
+
+    private async Task<JsonNode> ReindexRepositoryAsync(JsonElement? p, CancellationToken ct)
+    {
+        var rawPath = GetString(p, "path") ?? throw new ArgumentException("path is required");
+        var gitRef = GetString(p, "ref");  // metadata only — graph state comes from the filesystem
+
+        var resolvedPath = ResolveAllowedPath(rawPath);
+
+        // Truly async: no sync-over-async GetResult() blocking the handler
+        // thread. ct is the per-connection token linked to server shutdown,
+        // so a client drop or Ctrl+C cancels the scan promptly.
+        var record = await _combined.ReindexAsync(resolvedPath, _scanner, options: null, ct: ct);
+
+        var response = new JsonObject
+        {
+            ["ok"] = true,
+            ["repoPath"] = record.RepoPath,
+            ["lastScannedAtUtc"] = record.LastScannedAtUtc.ToString("O"),
+            ["nodeCount"] = record.NodeCount,
+            ["edgeCount"] = record.EdgeCount,
+        };
+        if (gitRef is not null)
+            response["ref"] = gitRef;  // omit when absent rather than emit "ref": null
+        return response;
+    }
+
+    private async Task<JsonNode> ReindexAllAsync(CancellationToken ct)
+    {
+        // Sequential to keep Roslyn workspace memory usage bounded. For an
+        // N-repo fleet this is O(N) long — callers should prefer
+        // reindex_repository when they know what changed.
+        var results = new JsonArray();
+        foreach (var path in _combined.KnownRepositories)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var record = await _combined.ReindexAsync(path, _scanner, options: null, ct: ct);
+                JsonNode entry = new JsonObject
+                {
+                    ["ok"] = true,
+                    ["repoPath"] = record.RepoPath,
+                    ["lastScannedAtUtc"] = record.LastScannedAtUtc.ToString("O"),
+                    ["nodeCount"] = record.NodeCount,
+                    ["edgeCount"] = record.EdgeCount,
+                };
+                results.Add(entry);
+            }
+            catch (OperationCanceledException)
+            {
+                // Shutdown in progress — bail out instead of logging per-repo
+                // "cancelled" lines.
+                throw;
+            }
+            catch (Exception ex)
+            {
+                JsonNode entry = new JsonObject
+                {
+                    ["ok"] = false,
+                    ["repoPath"] = path,
+                    ["error"] = ex.Message,
+                };
+                results.Add(entry);
+            }
+        }
+        return new JsonObject { ["repositories"] = results };
+    }
+
+    /// <summary>
+    /// Resolve and validate a client-supplied repo path. Accepts:
+    /// already-known repositories (identified by normalised path prefix)
+    /// and, when a workspace root was configured, paths under that root.
+    /// Rejects everything else — without this guard, an MCP client could
+    /// point the scanner at any filesystem location and exfiltrate its
+    /// graph via the other query tools.
+    /// </summary>
+    private string ResolveAllowedPath(string rawPath)
+    {
+        var canonical = Paths.Normalize(Path.GetFullPath(rawPath));
+
+        if (_combined.KnownRepositories.Any(k =>
+                string.Equals(k, canonical, StringComparison.OrdinalIgnoreCase)))
+            return canonical;
+
+        if (_workspaceRoot is not null && Paths.IsUnder(canonical, _workspaceRoot))
+            return canonical;
+
+        throw new InvalidOperationException(
+            $"Path '{rawPath}' is not a known repository" +
+            (_workspaceRoot is null
+                ? " and no workspace root is configured."
+                : $" and is not under the configured workspace root '{_workspaceRoot}'."));
     }
 
     private static JsonNode BreakingDiff(JsonElement? p)

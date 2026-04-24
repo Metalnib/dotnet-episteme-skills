@@ -5,7 +5,6 @@ namespace Synopsis.Tests;
 
 public sealed class BreakingChangeClassifierTests
 {
-    // --- NugetVersionBump ---
 
     [Fact]
     public void NugetVersionBump_MajorBump_IsHigh()
@@ -122,7 +121,6 @@ public sealed class BreakingChangeClassifierTests
         Assert.Single(change.AffectedNodeIds);
     }
 
-    // --- Endpoint route / verb changes ---
 
     [Fact]
     public void EndpointRouteChange_SameHandlerDifferentRoute_IsCritical()
@@ -182,7 +180,6 @@ public sealed class BreakingChangeClassifierTests
         Assert.Equal("(removed)", change.AfterSnippet);
     }
 
-    // --- ApiSignatureChange ---
 
     [Fact]
     public void ApiSignatureChange_ParameterTypeEdit_SameArity_IsPairedAsHigh()
@@ -364,7 +361,6 @@ public sealed class BreakingChangeClassifierTests
         Assert.Empty(BreakingChangeClassifier.Classify(before, after).Changes);
     }
 
-    // --- TableRename ---
 
     [Fact]
     public void TableRename_EntityRemapsToNewTable_IsCritical()
@@ -416,7 +412,6 @@ public sealed class BreakingChangeClassifierTests
         Assert.Equal("(removed)", tableRemoved.AfterSnippet);
     }
 
-    // --- Stats / empty cases ---
 
     [Fact]
     public void Classify_NoDiff_EmptyChanges()
@@ -451,7 +446,6 @@ public sealed class BreakingChangeClassifierTests
         Assert.Equal(2, result.Stats.Classified);
     }
 
-    // --- Certainty propagation ---
 
     [Fact]
     public void Certainty_ReportsWeakerOfBeforeAndAfter()
@@ -465,7 +459,6 @@ public sealed class BreakingChangeClassifierTests
         Assert.Equal(Certainty.Inferred, change.Certainty);   // weaker side wins
     }
 
-    // --- Helpers ---
 
     private static GraphBuilder MakeBuilder() => new();
 

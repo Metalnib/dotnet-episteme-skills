@@ -79,7 +79,13 @@ internal sealed class HttpCallPass : IAnalysisPass
                 requestPath is null ? Certainty.Unresolved : Certainty.Inferred,
                 new Dictionary<string, string?>
                 {
-                    ["verb"] = verb, ["path"] = requestPath, ["absoluteUri"] = requestUri?.ToString()
+                    ["verb"] = verb,
+                    ["path"] = requestPath,
+                    ["absoluteUri"] = requestUri?.ToString(),
+                    // Denormalised for CrossRepoResolver: saves it from
+                    // walking edges back to the HttpClient node.
+                    ["clientName"] = client.Name,
+                    ["clientBaseUrl"] = client.BaseUrl,
                 });
 
             graph.AddEdge(client.Id, serviceId, EdgeType.CallsHttp,
@@ -92,66 +98,11 @@ internal sealed class HttpCallPass : IAnalysisPass
                 Symbols.ToLocation(invocation), project.RepositoryName, project.ProjectName,
                 requestPath is null ? Certainty.Unresolved : Certainty.Inferred);
 
-            ResolveInternalTarget(project, graph, mainGraph, invocation, client, requestUri, requestPath, endpointId);
-        }
-    }
-
-    private static void ResolveInternalTarget(LoadedProject project, GraphBuilder graph,
-        GraphBuilder? mainGraph, InvocationExpressionSyntax invocation, HttpClientInfo client,
-        Uri? requestUri, string? requestPath, string externalEndpointId)
-    {
-        var path = requestUri?.AbsolutePath ?? requestPath;
-        if (string.IsNullOrWhiteSpace(path))
-            return;
-
-        var lookup = mainGraph ?? graph;
-        var candidates = lookup.FindEndpointCandidates(path);
-
-        // Phase 1: Route match + service affinity (client name / base URL host → repo/project name)
-        var serviceHint = requestUri?.Host ?? client.Name ?? client.DisplayName;
-        var matched = candidates
-            .Where(node =>
-            {
-                var route = node.Metadata.GetValueOrDefault("route");
-                if (string.IsNullOrWhiteSpace(route)) return false;
-                if (!RouteMatches(path, route)
-                    && !path.StartsWith(route, StringComparison.OrdinalIgnoreCase)
-                    && !route.StartsWith(path, StringComparison.OrdinalIgnoreCase))
-                    return false;
-
-                // Narrow by service affinity: does the client hint correlate with the target repo/project?
-                return MatchesServiceHint(node, serviceHint, client.BaseUrl);
-            })
-            .ToArray();
-
-        // Phase 2: If affinity filter found nothing, fall back to route-only (but flag as ambiguous)
-        if (matched.Length == 0)
-        {
-            matched = candidates
-                .Where(node =>
-                {
-                    var route = node.Metadata.GetValueOrDefault("route");
-                    if (string.IsNullOrWhiteSpace(route)) return false;
-                    return RouteMatches(path, route);
-                })
-                .ToArray();
-        }
-
-        if (matched.Length == 0)
-            return;
-
-        var certainty = matched.Length == 1 ? Certainty.Inferred : Certainty.Ambiguous;
-        foreach (var candidate in matched)
-        {
-            graph.AddEdge(externalEndpointId, candidate.Id,
-                certainty == Certainty.Ambiguous ? EdgeType.Ambiguous : EdgeType.ResolvesToService,
-                $"{client.DisplayName} resolves to {candidate.DisplayName}",
-                Symbols.ToLocation(invocation), project.RepositoryName, project.ProjectName, certainty);
-
-            if (!string.Equals(project.RepositoryName, candidate.RepositoryName, StringComparison.OrdinalIgnoreCase))
-                graph.AddEdge(externalEndpointId, candidate.Id, EdgeType.CrossesRepoBoundary,
-                    $"{project.ProjectName} calls across repo into {candidate.RepositoryName}",
-                    Symbols.ToLocation(invocation), project.RepositoryName, project.ProjectName, certainty);
+            // Cross-repo resolution (ExternalEndpoint → internal Endpoint) is
+            // no longer done here — see Synopsis.Analysis.Graph.CrossRepoResolver,
+            // which runs post-merge over the full combined graph so the
+            // result is identical whether the caller is a full-workspace
+            // scan or CombinedGraph's incremental re-merge.
         }
     }
 
@@ -276,104 +227,6 @@ internal sealed class HttpCallPass : IAnalysisPass
     private static HttpClientInfo CreateInfo(LoadedProject project, string displayName, string name,
         string? baseUrl, SourceLocation? location, Certainty certainty) =>
         new(NodeId.From("http-client", project.ProjectName, name), displayName, name, baseUrl, location, certainty);
-
-    private static bool RouteMatches(string requestPath, string routeTemplate)
-    {
-        var reqSegments = requestPath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var routeSegments = routeTemplate.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (reqSegments.Length != routeSegments.Length) return false;
-
-        for (var i = 0; i < reqSegments.Length; i++)
-        {
-            var seg = routeSegments[i];
-            if (seg.StartsWith('{') && seg.EndsWith('}')) continue;
-            if (!string.Equals(reqSegments[i], seg, StringComparison.OrdinalIgnoreCase)) return false;
-        }
-        return true;
-    }
-
-    /// <summary>
-    /// Checks if the target endpoint's repo/project name correlates with the HTTP client's
-    /// service hint (client name, base URL host, or config key).
-    /// For example: client "CatalogClient" with baseUrl "http://catalog-api" should match
-    /// endpoints in repo "catalog-api" or project "Catalog.Api".
-    /// </summary>
-    private static bool MatchesServiceHint(GraphNode endpoint, string serviceHint, string? baseUrl)
-    {
-        var repo = endpoint.RepositoryName;
-        var project = endpoint.ProjectName;
-
-        // Direct match: hint contains repo/project name or vice versa
-        if (repo is not null && (
-            serviceHint.Contains(repo, StringComparison.OrdinalIgnoreCase)
-            || repo.Contains(serviceHint, StringComparison.OrdinalIgnoreCase)))
-            return true;
-
-        if (project is not null && (
-            serviceHint.Contains(project, StringComparison.OrdinalIgnoreCase)
-            || project.Contains(serviceHint, StringComparison.OrdinalIgnoreCase)))
-            return true;
-
-        // Normalized match: strip common suffixes/prefixes and compare stems
-        // "CatalogClient" → "catalog", "catalog-api" → "catalog", "Catalog.Api" → "catalog"
-        var hintStem = NormalizeServiceName(serviceHint);
-        if (hintStem.Length >= 3)
-        {
-            if (repo is not null && NormalizeServiceName(repo).Contains(hintStem, StringComparison.OrdinalIgnoreCase))
-                return true;
-            if (project is not null && NormalizeServiceName(project).Contains(hintStem, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        // Base URL host match: "http://catalog-api:5000" host → "catalog-api" → match repo "catalog-api"
-        if (baseUrl is not null && Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
-        {
-            var host = uri.Host;
-            if (repo is not null && (
-                host.Contains(repo, StringComparison.OrdinalIgnoreCase)
-                || repo.Contains(host, StringComparison.OrdinalIgnoreCase)))
-                return true;
-
-            var hostStem = NormalizeServiceName(host);
-            if (hostStem.Length >= 3)
-            {
-                if (repo is not null && NormalizeServiceName(repo).Contains(hostStem, StringComparison.OrdinalIgnoreCase))
-                    return true;
-                if (project is not null && NormalizeServiceName(project).Contains(hostStem, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Strips common suffixes (Client, Service, Api, Gateway, Proxy, Handler) and
-    /// separators (-, ., _) to produce a comparable stem.
-    /// "CatalogClient" → "catalog", "orders-api" → "orders", "Payment.Gateway" → "payment"
-    /// </summary>
-    private static string NormalizeServiceName(string name)
-    {
-        var result = name;
-        ReadOnlySpan<string> suffixes = ["Client", "Service", "Api", "Gateway", "Proxy", "Handler", "Server"];
-        foreach (var suffix in suffixes)
-        {
-            if (result.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) && result.Length > suffix.Length)
-                result = result[..^suffix.Length];
-        }
-
-        ReadOnlySpan<string> prefixes = ["repo-", "svc-", "service-"];
-        foreach (var prefix in prefixes)
-        {
-            if (result.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && result.Length > prefix.Length)
-                result = result[prefix.Length..];
-        }
-
-        return result.Replace("-", "", StringComparison.Ordinal)
-            .Replace(".", "", StringComparison.Ordinal)
-            .Replace("_", "", StringComparison.Ordinal)
-            .ToLowerInvariant();
-    }
 
     private sealed record HttpClientInfo(string Id, string DisplayName, string? Name, string? BaseUrl,
         SourceLocation? Location, Certainty Certainty);

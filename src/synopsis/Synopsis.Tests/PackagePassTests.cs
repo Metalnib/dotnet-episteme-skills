@@ -7,7 +7,6 @@ namespace Synopsis.Tests;
 
 public sealed class PackagePassTests
 {
-    // --- ParseAssets ---
 
     [Fact]
     public void ParseAssets_EmptyDocument_ReturnsEmpty()
@@ -152,7 +151,6 @@ public sealed class PackagePassTests
         Assert.Equal("Serilog", entry.PackageId);
     }
 
-    // --- ParseCsproj ---
 
     [Fact]
     public void ParseCsproj_InlineVersion_IsInferredAndDirect()
@@ -327,7 +325,6 @@ public sealed class PackagePassTests
         Assert.Equal(["net9.0", "net10.0"], entry.Frameworks);
     }
 
-    // --- TryReadAssets (error paths; happy path covered via ParseAssets tests) ---
 
     [Fact]
     public void TryReadAssets_MissingFile_ReturnsNull()
@@ -377,7 +374,6 @@ public sealed class PackagePassTests
         }
     }
 
-    // --- LoadCpmVersions ---
 
     [Fact]
     public void LoadCpmVersions_ExtractsPackageVersions()
@@ -398,7 +394,6 @@ public sealed class PackagePassTests
         Assert.Equal("13.0.3", cpm["newtonsoft.json"]);   // case-insensitive lookup
     }
 
-    // --- EmitEntries ---
 
     [Fact]
     public void EmitEntries_CreatesStableNodeIdAcrossProjects()

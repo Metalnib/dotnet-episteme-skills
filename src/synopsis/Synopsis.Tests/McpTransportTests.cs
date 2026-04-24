@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Synopsis.Analysis;
 using Synopsis.Analysis.Graph;
 using Synopsis.Analysis.Model;
 using Synopsis.Mcp;
@@ -9,7 +10,6 @@ namespace Synopsis.Tests;
 
 public sealed class McpTransportTests
 {
-    // --- TcpTransport.Create parser ---
 
     [Fact]
     public async Task TcpTransport_Create_BarePort_BindsToLoopback()
@@ -50,7 +50,6 @@ public sealed class McpTransportTests
         Assert.True(t.BoundEndpoint.Port > 0);
     }
 
-    // --- UnixSocketTransport stale cleanup ---
 
     [Fact]
     public async Task UnixSocketTransport_StaleFileAtPath_IsReplacedByNewSocket()
@@ -120,8 +119,8 @@ public sealed class McpTransportTests
         try
         {
             await using var transport = new UnixSocketTransport(path);
-            var graph = EmptyGraph();
-            var server = new McpServer(graph);
+            var combined = EmptyCombinedGraph();
+            var server = new McpServer(combined, ScannerBuilder.Create());
 
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             var serverTask = Task.Run(() => server.RunAsync(transport, cts.Token));
@@ -142,7 +141,6 @@ public sealed class McpTransportTests
         }
     }
 
-    // --- McpServer end-to-end over TCP ---
 
     [Fact]
     public async Task McpServer_TwoConcurrentTcpClients_BothGetResponses()
@@ -151,8 +149,8 @@ public sealed class McpTransportTests
         // the transport accept loop must spawn a task per connection so a
         // second client gets served in parallel with the first.
         await using var transport = TcpTransport.Create(":0");
-        var graph = EmptyGraph();
-        var server = new McpServer(graph);
+        var combined = EmptyCombinedGraph();
+        var server = new McpServer(combined, ScannerBuilder.Create());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var serverTask = Task.Run(() => server.RunAsync(transport, cts.Token));
@@ -176,8 +174,8 @@ public sealed class McpTransportTests
     public async Task McpServer_ClientDisconnectMidRequest_ServerKeepsServing()
     {
         await using var transport = TcpTransport.Create(":0");
-        var graph = EmptyGraph();
-        var server = new McpServer(graph);
+        var combined = EmptyCombinedGraph();
+        var server = new McpServer(combined, ScannerBuilder.Create());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         var serverTask = Task.Run(() => server.RunAsync(transport, cts.Token));
@@ -203,20 +201,19 @@ public sealed class McpTransportTests
         await serverTask;
     }
 
-    // --- Review-driven regressions ---
 
     [Fact]
     public async Task McpServer_ClientRstBeforeAccept_ListenerStaysAlive()
     {
-        // Regression for #1: a blind `catch (SocketException) { yield break; }`
+        // a blind `catch (SocketException) { yield break; }`
         // in the accept loop would kill the listener on transient errors
         // (ECONNABORTED, EINTR, EMFILE). Now the classifier distinguishes
         // fatal from transient. Induce churn by opening and immediately
         // closing many TCP connections, then prove a real client still gets
         // served afterwards.
         await using var transport = TcpTransport.Create(":0");
-        var graph = EmptyGraph();
-        var server = new McpServer(graph);
+        var combined = EmptyCombinedGraph();
+        var server = new McpServer(combined, ScannerBuilder.Create());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var serverTask = Task.Run(() => server.RunAsync(transport, cts.Token));
@@ -241,13 +238,13 @@ public sealed class McpTransportTests
     [Fact]
     public async Task McpServer_OversizeLine_DisconnectsOffendingClient_LeavesServerUp()
     {
-        // Regression for #5: ReadLineAsync had no cap. A 2 MiB line without
+        // ReadLineAsync had no cap. A 2 MiB line without
         // a newline would have buffered the whole thing. Now LineProtocol
         // throws IOException past 1 MiB; the server logs and drops the
         // connection, other clients are unaffected.
         await using var transport = TcpTransport.Create(":0");
-        var graph = EmptyGraph();
-        var server = new McpServer(graph);
+        var combined = EmptyCombinedGraph();
+        var server = new McpServer(combined, ScannerBuilder.Create());
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
         var serverTask = Task.Run(() => server.RunAsync(transport, cts.Token));
@@ -280,7 +277,7 @@ public sealed class McpTransportTests
     [Fact]
     public async Task LineProtocol_WriteReadRoundTripsUtf8WithoutBom()
     {
-        // Regression for #4: defaults used to detect/emit BOM, which breaks
+        // defaults used to detect/emit BOM, which breaks
         // strict JSON-RPC parsers. Round-trip a payload and assert no BOM
         // was written.
         using var ms = new MemoryStream();
@@ -315,7 +312,6 @@ public sealed class McpTransportTests
         Assert.Null(await reader.ReadLineAsync(CancellationToken.None));  // EOF
     }
 
-    // --- AcceptErrorClassifier unit table ---
 
     [Theory]
     [InlineData(SocketError.OperationAborted,  true)]    // listener disposed
@@ -336,7 +332,6 @@ public sealed class McpTransportTests
         Assert.Equal(expectedFatal, AcceptErrorClassifier.IsFatal(error));
     }
 
-    // --- Helpers ---
 
     private static ScanResult EmptyGraph()
     {
@@ -344,6 +339,8 @@ public sealed class McpTransportTests
         var info = new ScanInfo("/root", DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, [], new Dictionary<string, string>());
         return builder.Build(info, []);
     }
+
+    private static CombinedGraph EmptyCombinedGraph() => new();
 
     private static async Task<string> PingAsync(IPEndPoint endpoint, int id, CancellationToken ct)
     {

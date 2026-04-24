@@ -66,7 +66,6 @@ public static class BreakingChangeClassifier
         return new BreakingDiffResult([.. results], stats);
     }
 
-    // --- Packages ---
 
     private static void ClassifyPackageChanges(GraphDiff diff,
         List<BreakingChange> results,
@@ -173,7 +172,6 @@ public static class BreakingChangeClassifier
         return int.TryParse(head, NumberStyles.None, CultureInfo.InvariantCulture, out major);
     }
 
-    // --- Endpoints ---
 
     private static void ClassifyEndpointChanges(GraphDiff diff,
         List<BreakingChange> results,
@@ -285,7 +283,6 @@ public static class BreakingChangeClassifier
         }
     }
 
-    // --- Methods ---
 
     private static void ClassifyMethodChanges(GraphDiff diff,
         ScanResult before, ScanResult after, List<BreakingChange> results,
@@ -429,7 +426,6 @@ public static class BreakingChangeClassifier
         return !string.IsNullOrWhiteSpace(full) ? full : method.DisplayName;
     }
 
-    // --- Tables ---
 
     private static void ClassifyTableChanges(GraphDiff diff,
         ScanResult before, ScanResult after, List<BreakingChange> results,
@@ -505,7 +501,6 @@ public static class BreakingChangeClassifier
         }
     }
 
-    // --- Helpers ---
 
     /// <summary>Returns the lower (weaker) of two certainties.</summary>
     private static Certainty MinCertainty(Certainty a, Certainty b) =>

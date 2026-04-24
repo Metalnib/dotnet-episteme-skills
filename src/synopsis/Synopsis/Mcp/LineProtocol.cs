@@ -120,9 +120,18 @@ internal static class LineProtocol
     /// will return null.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Encodes into an <see cref="ArrayPool{T}"/> buffer instead of
     /// <c>Encoding.GetBytes(string)</c> so a busy daemon doesn't allocate a
     /// fresh byte[] per response.
+    /// </para>
+    /// <para>
+    /// Returns with <c>clearArray: true</c>. Response payloads contain SQL
+    /// table names, endpoint routes, configuration keys, and file paths —
+    /// leaving those in a pooled buffer for the next unrelated renter is a
+    /// real information-flow hazard in a process handling multiple MCP
+    /// clients. The zero-fill cost is negligible compared to the syscall.
+    /// </para>
     /// </remarks>
     public static async Task WriteLineAsync(Stream stream, string line, CancellationToken ct)
     {
@@ -131,21 +140,18 @@ internal static class LineProtocol
         try
         {
             var written = Utf8NoBom.GetBytes(line, buffer);
-            try
-            {
-                await stream.WriteAsync(buffer.AsMemory(0, written), ct);
-                await stream.WriteAsync(Newline, ct);
-                await stream.FlushAsync(ct);
-            }
-            catch (Exception ex) when (
-                ex is IOException or System.Net.Sockets.SocketException or ObjectDisposedException)
-            {
-                // Peer gone; nothing useful we can do here.
-            }
+            await stream.WriteAsync(buffer.AsMemory(0, written), ct);
+            await stream.WriteAsync(Newline, ct);
+            await stream.FlushAsync(ct);
+        }
+        catch (Exception ex) when (
+            ex is IOException or System.Net.Sockets.SocketException or ObjectDisposedException)
+        {
+            // Peer gone; nothing useful we can do here.
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
         }
     }
 

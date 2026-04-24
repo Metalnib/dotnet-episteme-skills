@@ -1,7 +1,8 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Synopsis.Analysis.Model;
+using Synopsis.Analysis;
+using Synopsis.Analysis.Graph;
 
 namespace Synopsis.Mcp;
 
@@ -9,9 +10,13 @@ internal sealed class McpServer
 {
     private readonly McpTools _tools;
 
-    public McpServer(ScanResult graph)
+    /// <param name="workspaceRoot">
+    /// Optional sandbox root for <c>reindex_repository</c> — see
+    /// <see cref="McpTools(CombinedGraph, WorkspaceScanner, string?)"/>.
+    /// </param>
+    public McpServer(CombinedGraph combined, WorkspaceScanner scanner, string? workspaceRoot = null)
     {
-        _tools = new McpTools(graph);
+        _tools = new McpTools(combined, scanner, workspaceRoot);
     }
 
     /// <summary>
@@ -33,7 +38,25 @@ internal sealed class McpServer
         {
             await foreach (var connection in transport.AcceptAsync(ct))
             {
-                var task = Task.Run(() => HandleConnectionAsync(connection, ct), ct);
+                // Per-connection linked CTS: cancels when the connection's
+                // task completes (client drop, EOF, or error). In-flight
+                // scan tools observe this via their ct and stop promptly
+                // instead of holding the shared _scanLock. Linked to the
+                // server shutdown token so Ctrl+C still wins.
+                var connCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                var connToken = connCts.Token;
+                var task = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await HandleConnectionAsync(connection, connToken);
+                    }
+                    finally
+                    {
+                        connCts.Cancel();
+                        connCts.Dispose();
+                    }
+                }, ct);
                 inFlight[task] = 0;
                 _ = task.ContinueWith(done => inFlight.TryRemove(done, out _),
                     CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously,
@@ -73,7 +96,7 @@ internal sealed class McpServer
                     var request = JsonSerializer.Deserialize(line, McpJsonContext.Default.McpRequest);
                     response = request is null
                         ? MakeError(null, McpErrorCodes.ParseError, "Failed to parse request")
-                        : Dispatch(request);
+                        : await DispatchAsync(request, ct);
                 }
                 catch (JsonException ex)
                 {
@@ -94,7 +117,7 @@ internal sealed class McpServer
         }
     }
 
-    private McpResponse Dispatch(McpRequest request)
+    private async Task<McpResponse> DispatchAsync(McpRequest request, CancellationToken ct)
     {
         try
         {
@@ -103,7 +126,7 @@ internal sealed class McpServer
                 "initialize" => HandleInitialize(request),
                 "initialized" or "notifications/initialized" => Ok(request.Id, new JsonObject()),
                 "tools/list" => HandleToolsList(request),
-                "tools/call" => HandleToolCall(request),
+                "tools/call" => await HandleToolCallAsync(request, ct),
                 "ping" => Ok(request.Id, new JsonObject { ["status"] = "ok" }),
                 _ => MakeError(request.Id, McpErrorCodes.MethodNotFound, $"Unknown method: {request.Method}")
             };
@@ -151,7 +174,7 @@ internal sealed class McpServer
         return Ok(request.Id, new JsonObject { ["tools"] = tools });
     }
 
-    private McpResponse HandleToolCall(McpRequest request)
+    private async Task<McpResponse> HandleToolCallAsync(McpRequest request, CancellationToken ct)
     {
         if (request.Params is null)
             return MakeError(request.Id, McpErrorCodes.InvalidParams, "params is required");
@@ -172,7 +195,7 @@ internal sealed class McpServer
 
         try
         {
-            var result = _tools.Invoke(toolName, arguments);
+            var result = await _tools.InvokeAsync(toolName, arguments, ct);
             var text = result.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
             return Ok(request.Id, ToolContent(text, isError: false));
         }
