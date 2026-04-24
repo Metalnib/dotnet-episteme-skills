@@ -137,9 +137,12 @@ the returned metadata.)
 
 The response is a typed list of changes. Each change has:
 
-- `kind` — one of `ApiSignatureChange`, `DtoShapeChange`,
-  `EndpointRouteChange`, `EndpointVerbChange`, `EntityColumnChange`,
-  `TableRename`, `NugetVersionBump`, `SerializationContractChange`.
+- `kind` — paired change kinds (`ApiSignatureChange`, `EndpointRouteChange`,
+  `EndpointVerbChange`, `TableRename`, `NugetVersionBump`), removal kinds
+  (`ApiRemoved`, `EndpointRemoved`, `TableRemoved`, `PackageRemoved`), or
+  detection-pending kinds (`DtoShapeChange`, `EntityColumnChange`,
+  `SerializationContractChange` — not yet emitted; reserved for future
+  pass work).
 - `severity` — classifier's base severity (Critical/High/Medium/Low).
 - `certainty` — Synopsis certainty (`Exact` / `Inferred` / `Ambiguous` /
   `Unresolved`).

@@ -23,6 +23,9 @@ public static class JsonOutput
     public static void WriteDiff(string command, GraphDiff diff, Stopwatch timer) =>
         WriteEnvelope(command, JsonSerializer.SerializeToUtf8Bytes(diff, SynopsisJsonContext.Default.GraphDiff), timer);
 
+    public static void WriteBreakingDiff(string command, BreakingDiffResult result, Stopwatch timer) =>
+        WriteEnvelope(command, JsonSerializer.SerializeToUtf8Bytes(result, SynopsisJsonContext.Default.BreakingDiffResult), timer);
+
     public static void WriteNode(string command, GraphNode node, Stopwatch timer) =>
         WriteEnvelope(command, JsonSerializer.SerializeToUtf8Bytes(node, SynopsisJsonContext.Default.GraphNode), timer);
 

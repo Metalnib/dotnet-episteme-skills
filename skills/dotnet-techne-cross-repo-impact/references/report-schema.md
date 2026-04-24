@@ -52,13 +52,22 @@ of `SKILL.md`.
 
 One of:
 
+**Paired change kinds (classifier emits when a before+after pair is found):**
 - `ApiSignatureChange`
-- `DtoShapeChange`
 - `EndpointRouteChange`
 - `EndpointVerbChange`
-- `EntityColumnChange`
 - `TableRename`
 - `NugetVersionBump`
+
+**Removal kinds (classifier emits for unmatched removals — often the most breaking case):**
+- `ApiRemoved`
+- `EndpointRemoved`
+- `TableRemoved`
+- `PackageRemoved`
+
+**Reserved for future pass work (not yet emitted by the classifier):**
+- `DtoShapeChange`
+- `EntityColumnChange`
 - `SerializationContractChange`
 
 Value must come from the classifier output. Do not invent new kinds.

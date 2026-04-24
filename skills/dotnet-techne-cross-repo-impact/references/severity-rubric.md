@@ -19,6 +19,10 @@ Synopsis's `breaking_diff` command emits a base severity per change kind:
 | `NugetVersionBump` (minor/patch of shared library) | Low | Usually safe; surfaced for awareness. |
 | `ApiSignatureChange` (public method/record signature diff) | High | Compile-time break downstream; caught at build but still disruptive. |
 | `DtoShapeChange` (field added, nullable widening, default added) | Low | Usually backward-compatible; surfaced for awareness. |
+| `EndpointRemoved` | Critical | Clients get 404. Most breaking "deletion" case. |
+| `TableRemoved` | Critical | Queries fail; data may need recovery. |
+| `ApiRemoved` | High | Compile-time break for every caller — dependent code will not link. |
+| `PackageRemoved` | Low | Usually intentional, done after removing all usage. Downstream skill escalates if unexpected. |
 
 The classifier's output carries these base severities. Do not recompute
 them from the change kind alone — the classifier considers certainty and

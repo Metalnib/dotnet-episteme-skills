@@ -24,6 +24,7 @@ internal sealed class McpTools
             ["cross_repo_edges"] = (t, p) => t.CrossRepoEdges(p),
             ["ambiguous_review"] = (t, p) => t.AmbiguousReview(p),
             ["scan_stats"] = (t, p) => t.ScanStats(p),
+            ["breaking_diff"] = (_, p) => BreakingDiff(p),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public McpTools(ScanResult graph)
@@ -52,6 +53,8 @@ internal sealed class McpTools
             """{"type":"object","properties":{"limit":{"type":"integer","default":50}}}"""),
         Tool("scan_stats", "Get scan statistics and metadata",
             """{"type":"object","properties":{}}"""),
+        Tool("breaking_diff", "Classify breaking changes between two graph snapshots. Emits typed kinds (NugetVersionBump, EndpointRouteChange, EndpointVerbChange, ApiSignatureChange, TableRename) with severity, certainty, and affected node IDs.",
+            """{"type":"object","properties":{"before":{"type":"string","description":"Path to the baseline graph.json"},"after":{"type":"string","description":"Path to the head graph.json"}},"required":["before","after"]}"""),
     ];
 
     public bool CanHandle(string toolName) => Handlers.ContainsKey(toolName);
@@ -181,6 +184,18 @@ internal sealed class McpTools
             ["warningCount"] = _graph.Warnings.Length,
         };
         return result;
+    }
+
+    private static JsonNode BreakingDiff(JsonElement? p)
+    {
+        var beforePath = GetString(p, "before") ?? throw new ArgumentException("before is required");
+        var afterPath = GetString(p, "after") ?? throw new ArgumentException("after is required");
+
+        var before = JsonExport.LoadAsync(beforePath).GetAwaiter().GetResult();
+        var after = JsonExport.LoadAsync(afterPath).GetAwaiter().GetResult();
+
+        var result = BreakingChangeClassifier.Classify(before, after);
+        return Serialize(result, SynopsisJsonContext.Default.BreakingDiffResult);
     }
 
     // Helpers

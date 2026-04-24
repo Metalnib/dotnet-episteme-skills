@@ -20,6 +20,7 @@ static async Task<int> Run(string[] args)
             "query" => await QueryCommand.RunAsync(args),
             "git-scan" => await GitScanCommand.RunAsync(args),
             "diff" => await DiffCommand.RunAsync(args),
+            "breaking-diff" => await BreakingDiffCommand.RunAsync(args),
             "mcp" => await McpCommand.RunAsync(args),
             _ => UnknownCommand(args[0])
         };
@@ -52,5 +53,6 @@ static void PrintHelp()
     Console.WriteLine("  synopsis query ambiguous [--graph graph.json] [--limit 50] [--json]");
     Console.WriteLine("  synopsis git-scan <rootPath> --base <branch> [--head HEAD] [--depth 4] [--json]");
     Console.WriteLine("  synopsis diff <before.json> <after.json> [--json]");
+    Console.WriteLine("  synopsis breaking-diff <before.json> <after.json> [--json] [-o report.json]");
     Console.WriteLine("  synopsis mcp --root <rootPath> | --graph <graph.json>");
 }
