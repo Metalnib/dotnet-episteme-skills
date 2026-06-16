@@ -1,6 +1,6 @@
 ---
 name: dotnet-techne-csharp-concurrency-patterns
-description: Use when choosing .NET concurrency patterns for async I/O, queues, pipelines, or thread safety. Keywords: async/await, channels, dataflow, Rx, lock contention, producer consumer, parallel processing.
+description: "Use when choosing .NET concurrency patterns for async I/O, queues, pipelines, or thread safety. Keywords: async/await, channels, dataflow, Rx, lock contention, producer consumer, parallel processing."
 disable-model-invocation: false
 user-invocable: true
 metadata:

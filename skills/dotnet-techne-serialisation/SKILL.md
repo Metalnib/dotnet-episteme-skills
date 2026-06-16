@@ -1,6 +1,6 @@
 ---
 name: dotnet-techne-serialisation
-description: Use when selecting serialisation formats and contracts for APIs, messaging, caching, or persistence. Keywords: serialisation, System.Text.Json, source generator, protobuf, messagepack, wire compatibility, AOT.
+description: "Use when selecting serialisation formats and contracts for APIs, messaging, caching, or persistence. Keywords: serialisation, System.Text.Json, source generator, protobuf, messagepack, wire compatibility, AOT."
 disable-model-invocation: false
 user-invocable: true
 metadata:

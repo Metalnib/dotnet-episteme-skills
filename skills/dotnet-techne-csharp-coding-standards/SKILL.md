@@ -1,6 +1,6 @@
 ---
 name: dotnet-techne-csharp-coding-standards
-description: Use when writing or refactoring modern C# with maintainability and performance standards. Keywords: coding standards, C# best practices, refactor C#, records, pattern matching, async best practices.
+description: "Use when writing or refactoring modern C# with maintainability and performance standards. Keywords: coding standards, C# best practices, refactor C#, records, pattern matching, async best practices."
 disable-model-invocation: false
 user-invocable: true
 metadata:

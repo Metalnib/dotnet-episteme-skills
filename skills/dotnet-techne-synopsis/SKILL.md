@@ -1,6 +1,6 @@
 ---
 name: dotnet-techne-synopsis
-description: Use when you need blast-radius analysis, dependency graphs, cross-repo impact, breaking-change diff, or architectural overview of .NET workspaces. Keywords: blast radius, dependency graph, impact analysis, cross-repo, call graph, endpoint map, EF Core lineage, breaking change, daemon, reindex.
+description: "Use when you need blast-radius analysis, dependency graphs, cross-repo impact, breaking-change diff, or architectural overview of .NET workspaces. Keywords: blast radius, dependency graph, impact analysis, cross-repo, call graph, endpoint map, EF Core lineage, breaking change, daemon, reindex."
 disable-model-invocation: false
 user-invocable: true
 license: MIT

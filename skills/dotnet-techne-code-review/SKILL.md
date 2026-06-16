@@ -1,6 +1,6 @@
 ---
 name: dotnet-techne-code-review
-description: Use when reviewing PRs/diffs/branches/documents for .NET quality, correctness, performance, security, data access, messaging, and observability. Includes adversarial critical-thinking mode for skeptical/cynical review requests. Keywords: code review, review PR, review diff, critical review, cynical review, adversarial review, production readiness, low GC, AOT, security review.
+description: "Use when reviewing PRs/diffs/branches/documents for .NET quality, correctness, performance, security, data access, messaging, and observability. Includes adversarial critical-thinking mode for skeptical/cynical review requests. Keywords: code review, review PR, review diff, critical review, cynical review, adversarial review, production readiness, low GC, AOT, security review."
 disable-model-invocation: false
 user-invocable: true
 license: MIT

@@ -1,6 +1,6 @@
 ---
 name: dotnet-techne-csharp-api-design
-description: Use when designing or changing public C#/.NET APIs with compatibility and versioning constraints. Keywords: breaking change, API design, backward compatibility, binary compatibility, deprecation strategy, versioning.
+description: "Use when designing or changing public C#/.NET APIs with compatibility and versioning constraints. Keywords: breaking change, API design, backward compatibility, binary compatibility, deprecation strategy, versioning."
 disable-model-invocation: false
 user-invocable: true
 metadata:

@@ -1,6 +1,6 @@
 ---
 name: dotnet-techne-cross-repo-impact
-description: Use when reviewing a .NET pull request for breaking changes that may affect other microservice repositories. Detects cross-repo API, DTO, endpoint, EF entity, and NuGet-package breaks, and checks whether a compatible downstream PR already exists. Keywords: cross-repo impact, breaking change, microservice compatibility, downstream break, compatible PR, blast radius review, api compatibility, contract break, dto shape change, endpoint break.
+description: "Use when reviewing a .NET pull request for breaking changes that may affect other microservice repositories. Detects cross-repo API, DTO, endpoint, EF entity, and NuGet-package breaks, and checks whether a compatible downstream PR already exists. Keywords: cross-repo impact, breaking change, microservice compatibility, downstream break, compatible PR, blast radius review, api compatibility, contract break, dto shape change, endpoint break."
 disable-model-invocation: false
 user-invocable: true
 license: MIT

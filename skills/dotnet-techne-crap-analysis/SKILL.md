@@ -1,6 +1,6 @@
 ---
 name: dotnet-techne-crap-analysis
-description: Use when you need CRAP score and coverage risk analysis to find high-risk code before refactoring or release. Keywords: CRAP score, risk hotspots, cyclomatic complexity, test coverage gaps, coverage threshold.
+description: "Use when you need CRAP score and coverage risk analysis to find high-risk code before refactoring or release. Keywords: CRAP score, risk hotspots, cyclomatic complexity, test coverage gaps, coverage threshold."
 disable-model-invocation: false
 user-invocable: true
 metadata:
