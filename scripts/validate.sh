@@ -18,36 +18,115 @@ else
   fi
 fi
 
-for key in name display_name version license skill_prefix skills; do
+for key in name; do
   if ! python3 -c "import json,sys; d=json.load(open('$PLUGIN_JSON')); sys.exit(0 if '$key' in d else 1)" 2>/dev/null; then
     err "plugin.json missing required key: $key"
   fi
 done
 
-skill_paths="$(python3 -c "import json; d=json.load(open('$PLUGIN_JSON')); [print(s.get('path','')) for s in d.get('skills',[])]" 2>/dev/null || true)"
+if ! REPO_ROOT="$REPO_ROOT" PLUGIN_JSON="$PLUGIN_JSON" python3 - <<'PY' >/dev/null 2>&1
+import json
+import os
+import pathlib
+import sys
 
-while IFS= read -r rel_path; do
-  [ -z "$rel_path" ] && continue
-  full_path="$REPO_ROOT/$rel_path"
-  if [ ! -f "$full_path" ]; then
-    err "Registered skill path not found: $rel_path"
+plugin_json = pathlib.Path(os.environ["PLUGIN_JSON"])
+data = json.loads(plugin_json.read_text())
+skills = data.get("skills")
+if skills is None:
+    sys.exit(0)
+if isinstance(skills, str):
+    sys.exit(0)
+if isinstance(skills, list) and all(isinstance(item, str) for item in skills):
+    sys.exit(0)
+sys.exit(1)
+PY
+then
+  err "plugin.json field 'skills' must be a string path or an array of string paths"
+else
+  ok "plugin.json skills field shape is valid"
+fi
+
+skill_roots="$(
+  REPO_ROOT="$REPO_ROOT" PLUGIN_JSON="$PLUGIN_JSON" python3 - <<'PY' 2>/dev/null || true
+import json
+import os
+import pathlib
+
+repo_root = pathlib.Path(os.environ["REPO_ROOT"])
+plugin_json = pathlib.Path(os.environ["PLUGIN_JSON"])
+data = json.loads(plugin_json.read_text())
+
+skills = data.get("skills")
+roots = []
+
+if skills is None:
+    if (repo_root / "skills").is_dir():
+        roots.append("./skills")
+    if (repo_root / "SKILL.md").is_file():
+        roots.append("./SKILL.md")
+elif isinstance(skills, str):
+    roots.append(skills)
+elif isinstance(skills, list):
+    roots.extend(skills)
+
+for root in roots:
+    print(root)
+PY
+)"
+
+if [ -z "$skill_roots" ]; then
+  echo "WARN: No skills declared and no default skills directory found" >&2
+fi
+
+skill_files_list=""
+while IFS= read -r rel_root; do
+  [ -z "$rel_root" ] && continue
+  full_root="$REPO_ROOT/$rel_root"
+
+  if [ -d "$full_root" ]; then
+    found_skill_files="$(find "$full_root" -type f -name 'SKILL.md' | sort)"
+    if [ -z "$found_skill_files" ]; then
+      err "No SKILL.md files found under $rel_root"
+      continue
+    fi
+    skill_files_list="${skill_files_list}"$'\n'"${found_skill_files}"
     continue
   fi
 
-  if ! grep -q '^---$' "$full_path"; then
-    err "$rel_path missing YAML frontmatter block"
+  if [ -f "$full_root" ]; then
+    skill_files_list="${skill_files_list}"$'\n'"${full_root}"
     continue
   fi
 
-  frontmatter="$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$full_path")"
-  if ! echo "$frontmatter" | grep -q '^name:'; then
-    err "$rel_path missing frontmatter field: name"
+  err "Registered skill path not found: $rel_root"
+done <<< "$skill_roots"
+
+while IFS= read -r skill_file; do
+  [ -z "$skill_file" ] && continue
+  rel_path="${skill_file#"$REPO_ROOT"/}"
+
+  if ! awk 'NR==1 && $0=="---" { found=1 } END { exit(found?0:1) }' "$skill_file"; then
+    err "$rel_path missing opening YAML frontmatter delimiter (---)"
+    continue
   fi
-  if ! echo "$frontmatter" | grep -q '^description:'; then
+
+  delimiter_count="$(grep -c '^---$' "$skill_file" || true)"
+  if [ "${delimiter_count:-0}" -lt 2 ]; then
+    err "$rel_path missing closing YAML frontmatter delimiter (---)"
+    continue
+  fi
+
+  frontmatter="$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$skill_file")"
+  if ! printf '%s\n' "$frontmatter" | grep -q '^description:'; then
     err "$rel_path missing frontmatter field: description"
+    continue
+  fi
+  if ! printf '%s\n' "$frontmatter" | grep -q '^name:'; then
+    echo "WARN: $rel_path missing frontmatter field: name (allowed, but less explicit)" >&2
   fi
   ok "$rel_path frontmatter looks valid"
-done <<< "$skill_paths"
+done <<< "$skill_files_list"
 
 echo
 if [ "$ERRORS" -gt 0 ]; then

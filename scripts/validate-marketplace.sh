@@ -29,7 +29,7 @@ else
   fi
 fi
 
-for key in name description owner repository plugins; do
+for key in name owner plugins; do
   if ! python3 -c "import json,sys; d=json.load(open('$MARKETPLACE_JSON')); sys.exit(0 if '$key' in d else 1)" 2>/dev/null; then
     err "marketplace.json missing required key: $key"
   fi
@@ -37,35 +37,35 @@ done
 
 plugin_name="$(python3 -c "import json; print(json.load(open('$PLUGIN_JSON')).get('name',''))" 2>/dev/null || true)"
 plugin_version="$(python3 -c "import json; print(json.load(open('$PLUGIN_JSON')).get('version',''))" 2>/dev/null || true)"
-plugin_repository="$(python3 -c "import json; print(json.load(open('$PLUGIN_JSON')).get('repository',''))" 2>/dev/null || true)"
 
-marketplace_plugin_name="$(python3 -c "import json; d=json.load(open('$MARKETPLACE_JSON')); p=(d.get('plugins') or [{}])[0]; print(p.get('name',''))" 2>/dev/null || true)"
-marketplace_plugin_version="$(python3 -c "import json; d=json.load(open('$MARKETPLACE_JSON')); p=(d.get('plugins') or [{}])[0]; print(p.get('version',''))" 2>/dev/null || true)"
-marketplace_source="$(python3 -c "import json; d=json.load(open('$MARKETPLACE_JSON')); p=(d.get('plugins') or [{}])[0]; print(p.get('source',''))" 2>/dev/null || true)"
-marketplace_repository="$(python3 -c "import json; print(json.load(open('$MARKETPLACE_JSON')).get('repository',''))" 2>/dev/null || true)"
+if ! python3 -c "import json,sys; d=json.load(open('$MARKETPLACE_JSON')); p=d.get('plugins'); sys.exit(0 if isinstance(p,list) and len(p)>0 else 1)" 2>/dev/null; then
+  err "marketplace.json field 'plugins' must be a non-empty array"
+fi
 
-if [ "$marketplace_plugin_name" != "$plugin_name" ]; then
-  err "plugins[0].name ($marketplace_plugin_name) must match plugin.json name ($plugin_name)"
+if ! python3 -c "import json,sys; d=json.load(open('$MARKETPLACE_JSON')); sys.exit(0 if any((isinstance(p,dict) and 'name' in p and 'source' in p) for p in d.get('plugins',[])) else 1)" 2>/dev/null; then
+  err "marketplace.json must include at least one plugin entry with both 'name' and 'source'"
+fi
+
+marketplace_plugin_name="$(python3 -c "import json; d=json.load(open('$MARKETPLACE_JSON')); matches=[p for p in d.get('plugins',[]) if isinstance(p,dict) and p.get('name')=='$plugin_name']; p=(matches[0] if matches else {}); print(p.get('name',''))" 2>/dev/null || true)"
+marketplace_plugin_version="$(python3 -c "import json; d=json.load(open('$MARKETPLACE_JSON')); matches=[p for p in d.get('plugins',[]) if isinstance(p,dict) and p.get('name')=='$plugin_name']; p=(matches[0] if matches else {}); print(p.get('version',''))" 2>/dev/null || true)"
+marketplace_source="$(python3 -c "import json; d=json.load(open('$MARKETPLACE_JSON')); matches=[p for p in d.get('plugins',[]) if isinstance(p,dict) and p.get('name')=='$plugin_name']; p=(matches[0] if matches else {}); print(p.get('source',''))" 2>/dev/null || true)"
+
+if [ -z "$marketplace_plugin_name" ]; then
+  err "No plugin entry named '$plugin_name' found in marketplace.json"
 else
   ok "plugin name alignment looks valid"
 fi
 
 if [ "$marketplace_plugin_version" != "$plugin_version" ]; then
-  err "plugins[0].version ($marketplace_plugin_version) must match plugin.json version ($plugin_version)"
+  err "Plugin '$plugin_name' version in marketplace.json ($marketplace_plugin_version) must match plugin.json version ($plugin_version)"
 else
   ok "plugin version alignment looks valid"
 fi
 
 if [ "$marketplace_source" != "./" ]; then
-  err "plugins[0].source must be ./ (got: $marketplace_source)"
+  err "Plugin '$plugin_name' source must be ./ (got: $marketplace_source)"
 else
   ok "plugin source looks valid"
-fi
-
-if [ "$marketplace_repository" != "$plugin_repository" ]; then
-  err "marketplace repository ($marketplace_repository) must match plugin repository ($plugin_repository)"
-else
-  ok "repository alignment looks valid"
 fi
 
 echo
