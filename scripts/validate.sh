@@ -18,11 +18,9 @@ else
   fi
 fi
 
-for key in name; do
-  if ! python3 -c "import json,sys; d=json.load(open('$PLUGIN_JSON')); sys.exit(0 if '$key' in d else 1)" 2>/dev/null; then
-    err "plugin.json missing required key: $key"
-  fi
-done
+if ! python3 -c "import json,sys; d=json.load(open('$PLUGIN_JSON')); sys.exit(0 if 'name' in d else 1)" 2>/dev/null; then
+  err "plugin.json missing required key: name"
+fi
 
 if ! REPO_ROOT="$REPO_ROOT" PLUGIN_JSON="$PLUGIN_JSON" python3 - <<'PY' >/dev/null 2>&1
 import json
