@@ -41,7 +41,7 @@ internal static class GitScanCommand
         {
             Console.Error.WriteLine("[git-scan] No relevant changes found.");
             if (jsonMode)
-                Console.WriteLine("""{"command":"git-scan","ok":true,"result":{"changedFiles":[],"directlyAffectedNodes":[]}}""");
+                JsonOutput.WriteResult("git-scan", """{"changedFiles":[],"directlyAffectedNodes":[]}""", timer);
             return 0;
         }
 

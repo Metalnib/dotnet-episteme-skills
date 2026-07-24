@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "synopsis": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/synopsis-mcp-launcher.sh",
+      "args": []
+    }
+  }
+}

@@ -1,0 +1,8 @@
+[
+  {
+    "name": "synopsis-log",
+    "command": "tail -n 20 -F \"${CLAUDE_PLUGIN_DATA}/synopsis.log\"",
+    "description": "Synopsis MCP daemon diagnostics (scans, reindexing, connection errors)",
+    "when": "on-skill-invoke:dotnet-techne-synopsis"
+  }
+]

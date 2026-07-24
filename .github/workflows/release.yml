@@ -30,21 +30,27 @@ jobs:
           - rid: osx-arm64
             os: macos-14
             asset: synopsis-osx-arm64.tar.gz
+            slim_asset: synopsis-osx-arm64-slim.tar.gz
           - rid: osx-x64
             os: macos-14
             asset: synopsis-osx-x64.tar.gz
+            slim_asset: synopsis-osx-x64-slim.tar.gz
           - rid: win-x64
             os: windows-latest
             asset: synopsis-win-x64.zip
+            slim_asset: synopsis-win-x64-slim.zip
           - rid: win-arm64
             os: windows-latest
             asset: synopsis-win-arm64.zip
+            slim_asset: synopsis-win-arm64-slim.zip
           - rid: linux-x64
             os: ubuntu-latest
             asset: synopsis-linux-x64.tar.gz
+            slim_asset: synopsis-linux-x64-slim.tar.gz
           - rid: linux-arm64
             os: ubuntu-latest
             asset: synopsis-linux-arm64.tar.gz
+            slim_asset: synopsis-linux-arm64-slim.tar.gz
     steps:
       - uses: actions/checkout@v4
 
@@ -60,21 +66,28 @@ jobs:
           dotnet build Synopsis.sln -c Release
           dotnet test Synopsis.Tests -c Release --no-build
           dotnet publish Synopsis/Synopsis.csproj -c Release -r ${{ matrix.rid }} --self-contained true -o publish/${{ matrix.rid }}
+          dotnet publish Synopsis/Synopsis.csproj -c Release -r ${{ matrix.rid }} --self-contained false -p:PublishReadyToRun=false -o publish/${{ matrix.rid }}-slim
 
-      - name: Create archive (Linux/macOS)
+      - name: Create archives (Linux/macOS)
         if: runner.os != 'Windows'
-        run: tar -czf ${{ matrix.asset }} -C src/synopsis/publish/${{ matrix.rid }} .
+        run: |
+          tar -czf ${{ matrix.asset }} -C src/synopsis/publish/${{ matrix.rid }} .
+          tar -czf ${{ matrix.slim_asset }} -C src/synopsis/publish/${{ matrix.rid }}-slim .
 
-      - name: Create archive (Windows)
+      - name: Create archives (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path src/synopsis/publish/${{ matrix.rid }}/* -DestinationPath ${{ matrix.asset }}
+        run: |
+          Compress-Archive -Path src/synopsis/publish/${{ matrix.rid }}/* -DestinationPath ${{ matrix.asset }}
+          Compress-Archive -Path src/synopsis/publish/${{ matrix.rid }}-slim/* -DestinationPath ${{ matrix.slim_asset }}
 
-      - name: Upload artifact
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.asset }}
-          path: ${{ matrix.asset }}
+          name: synopsis-${{ matrix.rid }}
+          path: |
+            ${{ matrix.asset }}
+            ${{ matrix.slim_asset }}
 
   publish:
     name: Publish GitHub release
@@ -113,7 +126,7 @@ jobs:
         run: |
           VERSION="$(jq -r '.version' .claude-plugin/plugin.json)"
           SKILL_COUNT="$(jq '.skills | length' .claude-plugin/plugin.json)"
-          tar -czf "dotnet-episteme-skills-${VERSION}.tar.gz" .claude-plugin skills scripts README.md
+          tar -czf "dotnet-episteme-skills-${VERSION}.tar.gz" .claude-plugin .mcp.json agents bin commands docs monitors skills scripts workflows README.md
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "SKILL_COUNT=$SKILL_COUNT" >> "$GITHUB_ENV"
 
@@ -147,16 +160,16 @@ jobs:
             ---
 
             ### Synopsis binaries (auto-downloaded on first use)
-            | Platform | Asset |
-            |---|---|
-            | macOS Apple Silicon | `synopsis-osx-arm64.tar.gz` |
-            | macOS Intel | `synopsis-osx-x64.tar.gz` |
-            | Windows x64 | `synopsis-win-x64.zip` |
-            | Windows arm64 | `synopsis-win-arm64.zip` |
-            | Linux x64 | `synopsis-linux-x64.tar.gz` |
-            | Linux arm64 | `synopsis-linux-arm64.tar.gz` |
+            | Platform | Self-contained | Slim (needs .NET 10 SDK) |
+            |---|---|---|
+            | macOS Apple Silicon | `synopsis-osx-arm64.tar.gz` | `synopsis-osx-arm64-slim.tar.gz` |
+            | macOS Intel | `synopsis-osx-x64.tar.gz` | `synopsis-osx-x64-slim.tar.gz` |
+            | Windows x64 | `synopsis-win-x64.zip` | `synopsis-win-x64-slim.zip` |
+            | Windows arm64 | `synopsis-win-arm64.zip` | `synopsis-win-arm64-slim.zip` |
+            | Linux x64 | `synopsis-linux-x64.tar.gz` | `synopsis-linux-x64-slim.tar.gz` |
+            | Linux arm64 | `synopsis-linux-arm64.tar.gz` | `synopsis-linux-arm64-slim.tar.gz` |
 
-            The detect script (`scripts/detect-tool.sh` / `.ps1`) auto-downloads the correct binary on first use. No manual install needed.
+            The detect script (`scripts/detect-tool.sh` / `.ps1`) auto-downloads the correct binary on first use: the slim framework-dependent build when a .NET 10 SDK is installed (~7x smaller), the self-contained build otherwise. No manual install needed.
 
             ### Skills archive
             `dotnet-episteme-skills-${{ env.VERSION }}.tar.gz` contains all skill definitions for manual installation.

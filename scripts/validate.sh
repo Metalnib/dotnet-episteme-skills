@@ -126,6 +126,134 @@ while IFS= read -r skill_file; do
   ok "$rel_path frontmatter looks valid"
 done <<< "$skill_files_list"
 
+# --- Agents (plugin subagents) ---
+AGENTS_DIR="$REPO_ROOT/agents"
+if [ -d "$AGENTS_DIR" ]; then
+  # A present "agents" key replaces the default ./agents scan; an empty array hides everything.
+  if ! python3 -c "import json,sys; sys.exit(1 if json.load(open('$PLUGIN_JSON')).get('agents') == [] else 0)" 2>/dev/null; then
+    err "plugin.json 'agents' is an empty array — it overrides the default ./agents scan and hides all agents; remove the key"
+  fi
+
+  agent_files="$(find "$AGENTS_DIR" -type f -name '*.md' | sort)"
+  if [ -z "$agent_files" ]; then
+    err "agents/ directory exists but contains no .md agent files"
+  fi
+  while IFS= read -r agent_file; do
+    [ -z "$agent_file" ] && continue
+    rel_path="${agent_file#"$REPO_ROOT"/}"
+    frontmatter="$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$agent_file")"
+    for field in name description; do
+      if ! printf '%s\n' "$frontmatter" | grep -q "^${field}:"; then
+        err "$rel_path missing frontmatter field: $field"
+      fi
+    done
+    for field in hooks mcpServers permissionMode; do
+      if printf '%s\n' "$frontmatter" | grep -q "^${field}:"; then
+        err "$rel_path uses '$field' — ignored in plugin agents; move the agent to .claude/agents/ if it needs this"
+      fi
+    done
+    ok "$rel_path agent frontmatter looks valid"
+  done <<< "$agent_files"
+fi
+
+# --- Commands ---
+COMMANDS_DIR="$REPO_ROOT/commands"
+if [ -d "$COMMANDS_DIR" ]; then
+  while IFS= read -r command_file; do
+    [ -z "$command_file" ] && continue
+    rel_path="${command_file#"$REPO_ROOT"/}"
+    frontmatter="$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$command_file")"
+    if ! printf '%s\n' "$frontmatter" | grep -q '^description:'; then
+      err "$rel_path missing frontmatter field: description"
+    else
+      ok "$rel_path command frontmatter looks valid"
+    fi
+  done <<< "$(find "$COMMANDS_DIR" -type f -name '*.md' | sort)"
+fi
+
+# --- MCP config ---
+MCP_JSON="$REPO_ROOT/.mcp.json"
+if [ -f "$MCP_JSON" ]; then
+  if ! python3 -c "import json,sys; sys.exit(0 if isinstance(json.load(open('$MCP_JSON')).get('mcpServers'), dict) else 1)" 2>/dev/null; then
+    err ".mcp.json must be valid JSON with an 'mcpServers' object"
+  else
+    ok ".mcp.json is valid"
+  fi
+  if [ ! -x "$REPO_ROOT/bin/synopsis-mcp-launcher.sh" ]; then
+    err "bin/synopsis-mcp-launcher.sh is missing or not executable"
+  else
+    ok "bin/synopsis-mcp-launcher.sh is executable"
+  fi
+fi
+
+# --- Hooks ---
+HOOKS_JSON="$REPO_ROOT/hooks/hooks.json"
+if [ -f "$HOOKS_JSON" ]; then
+  if ! python3 -c "import json,sys; sys.exit(0 if isinstance(json.load(open('$HOOKS_JSON')).get('hooks'), dict) else 1)" 2>/dev/null; then
+    err "hooks/hooks.json must be valid JSON with a 'hooks' object"
+  else
+    ok "hooks/hooks.json is valid"
+  fi
+  while IFS= read -r hook_script; do
+    [ -z "$hook_script" ] && continue
+    rel_path="${hook_script#"$REPO_ROOT"/}"
+    if [ ! -x "$hook_script" ]; then
+      err "$rel_path is not executable"
+    else
+      ok "$rel_path is executable"
+    fi
+  done <<< "$(find "$REPO_ROOT/hooks" -type f -name '*.sh' | sort)"
+
+  if [ -f "$REPO_ROOT/scripts/test-guard.sh" ]; then
+    if bash "$REPO_ROOT/scripts/test-guard.sh" > /dev/null 2>&1; then
+      ok "guard test matrix passed (scripts/test-guard.sh)"
+    else
+      err "guard test matrix failed - run scripts/test-guard.sh for details"
+    fi
+  fi
+fi
+
+# --- Workflows (dynamic workflow scripts) ---
+WORKFLOWS_DIR="$REPO_ROOT/workflows"
+if [ -d "$WORKFLOWS_DIR" ]; then
+  while IFS= read -r wf_file; do
+    [ -z "$wf_file" ] && continue
+    rel_path="${wf_file#"$REPO_ROOT"/}"
+    if ! grep -q '^export const meta' "$wf_file"; then
+      err "$rel_path missing 'export const meta' block"
+      continue
+    fi
+    if command -v node >/dev/null 2>&1; then
+      if ! node --check "$wf_file" >/dev/null 2>&1; then
+        err "$rel_path fails node --check"
+        continue
+      fi
+      ok "$rel_path parses (node --check)"
+    else
+      echo "WARN: node not found; $rel_path checked for meta block only" >&2
+    fi
+  done <<< "$(find "$WORKFLOWS_DIR" -type f -name '*.js' | sort)"
+  if [ ! -x "$REPO_ROOT/scripts/install-workflow.sh" ]; then
+    err "scripts/install-workflow.sh is missing or not executable"
+  fi
+fi
+
+# --- Monitors (experimental) ---
+MONITORS_JSON="$REPO_ROOT/monitors/monitors.json"
+if [ -f "$MONITORS_JSON" ]; then
+  if ! python3 -c "
+import json, sys
+monitors = json.load(open('$MONITORS_JSON'))
+ok = isinstance(monitors, list) and all(
+    isinstance(m, dict) and all(k in m for k in ('name', 'command', 'description'))
+    for m in monitors)
+sys.exit(0 if ok else 1)" 2>/dev/null; then
+    err "monitors/monitors.json must be a JSON array of {name, command, description} entries"
+  else
+    ok "monitors/monitors.json is valid"
+  fi
+fi
+
 echo
 if [ "$ERRORS" -gt 0 ]; then
   echo "Validation failed with $ERRORS error(s)."

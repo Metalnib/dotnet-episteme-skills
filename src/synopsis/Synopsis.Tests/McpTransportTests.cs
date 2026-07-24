@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using Synopsis.Analysis;
 using Synopsis.Analysis.Graph;
 using Synopsis.Analysis.Model;
@@ -141,6 +142,28 @@ public sealed class McpTransportTests
         }
     }
 
+
+    [Fact] // schemaVersion in the handshake lets a wire consumer (Aegis, ADR 0011) detect the contract
+    public async Task McpServer_Initialize_ReportsSchemaVersion()
+    {
+        await using var transport = TcpTransport.Create(":0");
+        var server = new McpServer(EmptyCombinedGraph(), ScannerBuilder.Create());
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var serverTask = Task.Run(() => server.RunAsync(transport, cts.Token));
+
+        var response = await RequestAsync(transport.BoundEndpoint, id: 1, method: "initialize", cts.Token);
+        using var doc = JsonDocument.Parse(response);
+        var result = doc.RootElement.GetProperty("result");
+        Assert.Equal(SynopsisSchema.EnvelopeVersion,
+            result.GetProperty("serverInfo").GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(SynopsisSchema.EnvelopeVersion,
+            result.GetProperty("capabilities").GetProperty("experimental")
+                  .GetProperty("synopsis").GetProperty("schemaVersion").GetInt32());
+
+        cts.Cancel();
+        await serverTask;
+    }
 
     [Fact]
     public async Task McpServer_TwoConcurrentTcpClients_BothGetResponses()
@@ -347,6 +370,19 @@ public sealed class McpTransportTests
         using var client = new TcpClient();
         await client.ConnectAsync(endpoint, ct);
         return await PingOverStream(client.GetStream(), id, ct);
+    }
+
+    private static async Task<string> RequestAsync(IPEndPoint endpoint, int id, string method, CancellationToken ct)
+    {
+        using var client = new TcpClient();
+        await client.ConnectAsync(endpoint, ct);
+        var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+        await using var stream = client.GetStream();
+        using var writer = new StreamWriter(stream, encoding, leaveOpen: true) { AutoFlush = true };
+        using var reader = new StreamReader(stream, encoding, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+
+        await writer.WriteLineAsync($"{{\"jsonrpc\":\"2.0\",\"id\":{id},\"method\":\"{method}\"}}".AsMemory(), ct);
+        return await reader.ReadLineAsync(ct) ?? string.Empty;
     }
 
     private static async Task<string> UnixPingAsync(string socketPath, int id, CancellationToken ct)

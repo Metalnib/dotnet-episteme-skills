@@ -7,7 +7,7 @@ license: MIT
 compatibility: Requires git and bash (Linux/macOS) or PowerShell (Windows). Works with any AI agent that supports the Agent Skills specification and has file read and command execution tools.
 metadata:
   author: Metalnib
-  version: "1.3.0"
+  version: "1.6.0"
   trigger_keywords:
     - code review
     - review pr
@@ -23,6 +23,8 @@ metadata:
 # End-to-end .NET Code Review
 
 Lean entrypoint for high-signal .NET review. Detailed commands/checklists/output requirements are split into reference files for progressive disclosure.
+
+On Claude Code with this plugin installed, prefer `/dotnet-episteme-skills:dotnet-review` for parallel multi-agent review (4 domain specialists + a generalist + adversarial maintainer verification). This file remains the complete single-context procedure for all other tools.
 
 ## Requirements
 This skill requires:
@@ -50,6 +52,8 @@ Use this skill when the user asks for:
   - Read after context is loaded; focus on only the relevant sections for changed components.
 - `references/output-contract.md`
   - Read before writing the final review output.
+- `references/maintainer-playbook.md`
+  - Read during the falsification pass (Step 3) to pressure-test findings before output.
 
 ## Review modes
 
@@ -90,6 +94,7 @@ Mandates:
 - Generate candidate defects (at least 5 in cynical mode).
 - For each hypothesis, collect direct evidence (`file:line`, snippet, or command output).
 - Try to falsify each hypothesis (tests, guards, explicit design intent, invariants).
+- Apply `references/maintainer-playbook.md` to each surviving finding (maintainer persona, five checks, evidence-backed verdicts).
 - Keep only confirmed/high-signal findings.
 
 ### Step 4: Domain checklist pass

@@ -7,7 +7,7 @@ license: MIT
 compatibility: Pre-built binaries for osx-arm64, osx-x64, win-x64, win-arm64, linux-x64, linux-arm64. No SDK required.
 metadata:
   author: Metalnib
-  version: "1.5.0"
+  version: "1.6.0"
   trigger_keywords:
     - blast radius
     - dependency graph
@@ -44,6 +44,8 @@ External dependencies for auto-download:
 - **macOS/Linux:** `curl` (pre-installed) or `wget`
 - **Windows:** PowerShell 5+ (built-in `System.Net.Http`)
 
+When a .NET 10 SDK is installed, the detect script downloads the slim framework-dependent build (`synopsis-<RID>-slim`, ~7x smaller) instead of the self-contained one. No SDK - self-contained build, no difference in behaviour.
+
 ## Install (optional - build from source)
 
 Only needed if you want to rebuild or no GitHub Release is available. Requires .NET 10+ SDK.
@@ -79,6 +81,8 @@ Use when the user asks to:
 ## Workflow
 
 ### Step 0: Detect tool
+
+**Claude Code (plugin install):** if `mcp__plugin_dotnet-episteme-skills_synopsis__*` tools are visible, use them directly - the plugin already runs the MCP server with persistent state, so skip detection and the CLI steps below entirely. The CLI path remains for every other tool and for one-shot commands (`scan`, `diff`, `breaking-diff`).
 
 **Bash:**
 ```bash
@@ -172,6 +176,10 @@ synopsis mcp --root /path/to/workspace --tcp localhost:5100
 
 State is persisted to `--state-dir` and restored on restart. On restart, repos are loaded from disk without re-scanning; use `reindex_all` to force a fresh scan of all known repos.
 
+**Log file (v1.6.0+):** `--log-file <path>` (or env `SYNOPSIS_LOG_FILE`) appends UTC-timestamped diagnostics to a file in addition to stderr, so external monitors can tail daemon activity. Older binaries ignore the flag.
+
+**Async startup scan (v1.6.0+):** with `--root`, the server answers `initialize` immediately and scans in the background - graph tools return an "indexing in progress" message until the first scan lands (state-dir-hydrated repos serve queries right away); `scan_stats` reports `indexing.inProgress`/`startedAtUtc`/`error`.
+
 ## Quick Reference
 
 ```bash
@@ -199,10 +207,10 @@ synopsis query impact --node X --json
 
 When `--json` is used, stdout contains a single JSON envelope:
 ```json
-{"command":"query impact","ok":true,"result":{...},"ms":142}
+{"command":"query impact","ok":true,"result":{...},"ms":142,"schemaVersion":1}
 ```
 
-All diagnostics and progress go to stderr. stdout is always machine-readable when `--json` is specified.
+`schemaVersion` identifies the envelope contract (bumps only on a breaking shape change). All diagnostics and progress go to stderr. stdout is always machine-readable when `--json` is specified.
 
 ## MCP Tools Available
 

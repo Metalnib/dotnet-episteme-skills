@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using Synopsis.Analysis.Graph;
 using Synopsis.Analysis.Model;
@@ -31,26 +32,32 @@ public static class JsonOutput
 
     public static void WriteScanSummary(string command, string output, ScanStatistics stats, ScanInfo info, Stopwatch timer)
     {
-        var resultJson = $$"""{"output":"{{output}}","statistics":{{JsonSerializer.Serialize(stats, SynopsisJsonContext.Default.ScanStatistics)}},"metadata":{{JsonSerializer.Serialize(info, SynopsisJsonContext.Default.ScanInfo)}}}""";
+        var resultJson = $$"""{"output":{{Quote(output)}},"statistics":{{JsonSerializer.Serialize(stats, SynopsisJsonContext.Default.ScanStatistics)}},"metadata":{{JsonSerializer.Serialize(info, SynopsisJsonContext.Default.ScanInfo)}}}""";
         WriteEnvelopeRaw(command, resultJson, timer);
     }
 
-    public static void WriteError(string command, string error, Stopwatch timer)
-    {
-        Console.WriteLine($$"""{"command":"{{Escape(command)}}","ok":false,"error":"{{Escape(error)}}","ms":{{timer.ElapsedMilliseconds}}}""");
-    }
-
-    private static void WriteEnvelope(string command, byte[] resultUtf8, Stopwatch timer)
-    {
-        var resultJson = System.Text.Encoding.UTF8.GetString(resultUtf8);
+    /// <summary>Route a pre-serialized result through the envelope so literal/empty
+    /// results still carry ms + schemaVersion.</summary>
+    public static void WriteResult(string command, string resultJson, Stopwatch timer) =>
         WriteEnvelopeRaw(command, resultJson, timer);
-    }
 
-    private static void WriteEnvelopeRaw(string command, string resultJson, Stopwatch timer)
-    {
-        Console.WriteLine($$"""{"command":"{{Escape(command)}}","ok":true,"result":{{resultJson}},"ms":{{timer.ElapsedMilliseconds}}}""");
-    }
+    public static void WriteError(string command, string error, Stopwatch timer) =>
+        Console.WriteLine(BuildError(command, error, timer.ElapsedMilliseconds));
 
-    private static string Escape(string value) =>
-        value.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    private static void WriteEnvelope(string command, byte[] resultUtf8, Stopwatch timer) =>
+        WriteEnvelopeRaw(command, System.Text.Encoding.UTF8.GetString(resultUtf8), timer);
+
+    private static void WriteEnvelopeRaw(string command, string resultJson, Stopwatch timer) =>
+        Console.WriteLine(BuildEnvelope(command, resultJson, timer.ElapsedMilliseconds));
+
+    // Pure (no Console) so the envelope contract is unit-testable.
+    internal static string BuildEnvelope(string command, string resultJson, long ms) =>
+        $$"""{"command":{{Quote(command)}},"ok":true,"result":{{resultJson}},"ms":{{ms}},"schemaVersion":{{SynopsisSchema.EnvelopeVersion}}}""";
+
+    internal static string BuildError(string command, string error, long ms) =>
+        $$"""{"command":{{Quote(command)}},"ok":false,"error":{{Quote(error)}},"ms":{{ms}},"schemaVersion":{{SynopsisSchema.EnvelopeVersion}}}""";
+
+    // JsonEncodedText keeps escaping AOT/trim-safe (a JsonSerializer<string> call needs reflection).
+    private static string Quote(string value) =>
+        $"\"{JsonEncodedText.Encode(value, JavaScriptEncoder.UnsafeRelaxedJsonEscaping)}\"";
 }

@@ -14,24 +14,44 @@ In a system with dozens or hundreds of microservices, where AI is generating imp
 
 ## Install
 
-Claude Code - one command, skills activate automatically:
+There are two install paths. The **plugin** (Claude Code only) gives you the full feature set. **Skills-only** is portable to any [Agent Skills](https://agentskills.io) tool. It ships the skills without the plugin automation - the `/dotnet-review` command, Synopsis MCP auto-start, and the monitor. You can still register Synopsis's MCP server in your tool yourself; the plugin just does it for you.
+
+| What you get | Plugin (Claude Code) | Skills-only (any Agent Skills tool) |
+|---|---|---|
+| The 9 `dotnet-techne-*` skills | ✓ | ✓ |
+| `/dotnet-review` multi-agent command (parallel reviewers + adversarial maintainer) | ✓ | single-context review skill instead |
+| Synopsis dependency-graph tools, auto-started + registered as an MCP server | ✓ | register `synopsis mcp` in your tool's MCP config yourself, or use the CLI |
+| Experimental Synopsis log monitor | ✓ | not included |
+| Runs in | Claude Code | Claude Code (no plugin), OpenCode, Codex, pi |
+
+Full per-tool breakdown: [docs/tool-compatibility.md](docs/tool-compatibility.md).
+
+### Option 1: Plugin (Claude Code)
+
+One command - skills activate automatically, and the review command, MCP server, and monitor come with it:
 
 ```text
 /plugin marketplace add Metalnib/dotnet-episteme-skills
 ```
 
-Other tools (OpenCode, etc.) - download the latest archive from the [releases page](https://github.com/Metalnib/dotnet-episteme-skills/releases), extract, and copy `skills/` to your tool's skills directory:
+> **Windows:** the Synopsis MCP auto-start and log monitor launch through a POSIX shell script, so run Claude Code under **WSL2** to get them (Synopsis then runs as a normal Linux binary). The review command, agents, and skills work on native Windows regardless; native Windows can also drive Synopsis through the CLI via `skills/dotnet-techne-synopsis/scripts/detect-tool.ps1`.
+
+### Option 2: Skills-only (portable)
+
+Download the latest archive from the [releases page](https://github.com/Metalnib/dotnet-episteme-skills/releases), extract, and copy `skills/` into your tool's skills directory:
 
 ```bash
-# Linux / macOS - extract then copy
-tar -xzf dotnet-episteme-skills-1.5.0.tar.gz
-cp -R skills/* ~/.claude/skills/          # Claude Code
+# Linux / macOS
+tar -xzf dotnet-episteme-skills-1.6.0.tar.gz
+cp -R skills/* ~/.claude/skills/          # Claude Code (skills only, no plugin extras)
 cp -R skills/* ~/.config/opencode/skill/  # OpenCode
+cp -R skills/* ~/.agents/skills/          # OpenAI Codex
+# pi: add the extracted skills/ directory to pi's skill paths in settings
 ```
 
 ```powershell
 # Windows
-Expand-Archive dotnet-episteme-skills-1.5.0.zip .
+Expand-Archive dotnet-episteme-skills-1.6.0.zip .
 Copy-Item -Recurse skills\* "$env:USERPROFILE\.claude\skills\"
 ```
 
@@ -42,6 +62,20 @@ git clone https://github.com/Metalnib/dotnet-episteme-skills.git
 cp -R dotnet-episteme-skills/skills/* ~/.claude/skills/
 # update later: git -C dotnet-episteme-skills pull && cp -R dotnet-episteme-skills/skills/* ~/.claude/skills/
 ```
+
+### Recommended companion: C# language intelligence (Claude Code)
+
+For real-time diagnostics and go-to-definition while reviewing or refactoring, install the official C# LSP plugin alongside this one - it complements the review skills and Synopsis (per-file code intelligence vs cross-repo architecture graph):
+
+```text
+/plugin install csharp-lsp@claude-plugins-official
+```
+
+```bash
+dotnet tool install -g csharp-ls   # the language server binary the plugin expects on PATH
+```
+
+This plugin deliberately ships no `.lsp.json` of its own: only the first registered LSP server per file extension runs, so bundling one would conflict with the official plugin.
 
 ---
 
@@ -68,6 +102,8 @@ The `dotnet-techne-code-review` skill performs end-to-end production-readiness r
 The review covers correctness (exception safety, CancellationToken propagation, thread-safety, retry and idempotency), performance (allocations on hot paths, unbounded buffers, missing backpressure, AOT/trimming), security (input validation, auth boundaries, SSRF controls, secrets in logs), data access (N+1 queries, missing indexes, EF Core misuse), messaging (ordering, poison messages, at-least-once safety), and observability (structured logging, metrics, correlation IDs).
 
 Two modes are available. Standard is the default - balanced coverage of correctness, maintainability, and risk. Cynical/Adversarial mode assumes defects exist until disproven, generates at least five failure hypotheses, and validates each with evidence before reporting. Use it when the code is on a critical path or when you want the hardest possible challenge.
+
+On Claude Code with the plugin installed, `/dotnet-episteme-skills:dotnet-review [target] [--cynical] [--model tier]` upgrades this to a multi-agent pipeline: five reviewers run in parallel, each in a fresh isolated context (correctness/API, performance/AOT, security/observability, data/messaging/HTTP-integration, plus a generalist that hunts what falls between the lanes), then an adversarial maintainer agent independently re-verifies every finding and refutes the ones that don't survive scrutiny - per [maintainer-playbook.md](skills/dotnet-techne-code-review/references/maintainer-playbook.md). The orchestration is a bundled [dynamic workflow](workflows/dotnet-review.js): deterministic script, reviewer model scaled to change size in code, findings kept out of your conversation. Expect it to run slower than the single-context skill path - the isolated reviewers and adversarial verification buy more thorough, run-to-run-consistent results in exchange for the extra time. `bash scripts/install-workflow.sh` optionally installs it as a native `/dotnet-review` command. On other tools the same playbook runs as a single-context falsification pass.
 
 ```
 Review the new OrdersController I just generated.
@@ -112,7 +148,7 @@ synopsis breaking-diff before.json after.json --json
 synopsis --version
 ```
 
-All commands support `--json`: `{"command":"...","ok":true,"result":{...},"ms":142}`.
+All commands support `--json`: `{"command":"...","ok":true,"result":{...},"ms":142,"schemaVersion":1}`. `schemaVersion` identifies the envelope contract and bumps only on a breaking shape change.
 
 Full command reference:
 
@@ -127,8 +163,10 @@ synopsis query ambiguous [--graph graph.json] [--limit 50] [--json]
 synopsis git-scan <rootPath> --base <branch> [--head HEAD] [--depth 4] [--json]
 synopsis diff <before.json> <after.json> [--json]
 synopsis breaking-diff <before.json> <after.json> [--json] [-o report.json]
-synopsis mcp (--root <rootPath> | --graph <graph.json>) [--socket <path> | --tcp <addr>] [--state-dir <path>]
+synopsis mcp (--root <rootPath> | --graph <graph.json>) [--socket <path> | --tcp <addr>] [--state-dir <path>] [--log-file <path>]
 ```
+
+On Claude Code the plugin starts the MCP server automatically (macOS/Linux, and Windows under WSL2; `bin/synopsis-mcp-launcher.sh` picks the platform binary): the tools below are available in every session as `mcp__plugin_dotnet-episteme-skills_synopsis__<tool>`, with graph state persisted under the plugin data directory and diagnostics logged to `synopsis.log` there (`--log-file`, v1.6.0+). Servers aren't restarted automatically if they exit - use `/mcp` to reconnect.
 
 MCP tools (available to AI agents in daemon mode):
 
@@ -209,12 +247,18 @@ These skills handle specific .NET engineering concerns. Each activates automatic
 ### Repository layout
 
 ```
-skills/                  One folder per skill, each with SKILL.md
+skills/                  One folder per skill, each with SKILL.md (portable, Agent Skills spec)
+agents/                  Claude Code plugin subagents (review pipeline)
+commands/                Claude Code slash commands (/dotnet-review orchestrator)
+bin/                     Plugin launcher scripts (Synopsis MCP)
+monitors/                Experimental Claude Code background monitors
+docs/                    Refactor plan and per-tool compatibility matrix
 src/synopsis/            Synopsis source (.NET 10)
   Synopsis.Analysis/     Roslyn analysis, graph model, querying
   Synopsis/              CLI, MCP server, JSON output
-  Synopsis.Tests/        155 unit tests
+  Synopsis.Tests/        161 unit tests
 scripts/                 Validation and CI helpers
+.mcp.json                Plugin MCP server declaration (Synopsis)
 .claude-plugin/          Plugin manifest and marketplace metadata
 .github/workflows/       Tag-driven release pipeline
 CHANGELOG.md             Version history
@@ -239,10 +283,10 @@ Version is defined once in `src/synopsis/Directory.Build.props` and flows into t
 2. Bump `<Version>` in `src/synopsis/Directory.Build.props`.
 3. Sync `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` to the same version.
 4. Validate locally: `bash scripts/validate.sh && bash scripts/validate-marketplace.sh`
-5. Tag and push - CI builds all 6 binaries, runs 155 tests, and publishes the GitHub release:
+5. Tag and push - CI builds all 6 binaries, runs the test suite, and publishes the GitHub release:
    ```bash
-   git tag v1.5.0
-   git push origin main v1.5.0
+   git tag v1.6.0
+   git push origin main v1.6.0
    ```
 
 ---

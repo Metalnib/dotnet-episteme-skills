@@ -4,7 +4,7 @@ description: "Use when reviewing a .NET pull request for breaking changes that m
 disable-model-invocation: false
 user-invocable: true
 license: MIT
-compatibility: Requires Synopsis v2.0.0+ (from dotnet-techne-synopsis skill) with either its MCP daemon or CLI accessible. Requires git and a code-host CLI (gh for GitHub, glab for GitLab) for compatible-PR search. Works with any AI agent that supports the Agent Skills specification.
+compatibility: Requires Synopsis v1.6.0+ (from dotnet-techne-synopsis skill) with either its MCP daemon or CLI accessible. Requires git and a code-host CLI (gh for GitHub, glab for GitLab) for compatible-PR search. Works with any AI agent that supports the Agent Skills specification.
 metadata:
   author: Metalnib
   version: "1.0.0"
@@ -36,7 +36,7 @@ analysis when invoked.
 
 ## Requirements
 
-- **Synopsis v2.0.0+** binary available, either:
+- **Synopsis v1.6.0+** binary available, either:
   - as a long-running MCP daemon (preferred — fastest, combined multi-repo
     graph kept warm), or
   - as a CLI invoked per-run (one-shot mode, no daemon required).

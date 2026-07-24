@@ -140,6 +140,25 @@ public sealed class CombinedGraph
     }
 
     /// <summary>
+    /// Run <paramref name="scanBody"/> while holding the scanner lock, so an
+    /// externally orchestrated scan (e.g. the MCP server's background startup
+    /// scan) serialises against <see cref="ReindexAsync"/> — MSBuildWorkspace
+    /// is not reentrant.
+    /// </summary>
+    public async Task RunLockedScanAsync(Func<CancellationToken, Task> scanBody, CancellationToken ct)
+    {
+        await _scanLock.WaitAsync(ct);
+        try
+        {
+            await scanBody(ct);
+        }
+        finally
+        {
+            _scanLock.Release();
+        }
+    }
+
+    /// <summary>
     /// Install or replace the scan result for <paramref name="repoPath"/>.
     /// Rebuilds the merged view, runs the cross-repo resolver, publishes
     /// the new snapshot, then persists to the state store (non-fatal on

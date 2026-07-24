@@ -62,7 +62,7 @@ internal sealed class UnixSocketTransport : IMcpTransport
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                Console.Error.WriteLine($"[mcp] Warning: could not chmod socket to 0600: {ex.Message}");
+                McpLog.Write($"[mcp] Warning: could not chmod socket to 0600: {ex.Message}");
             }
         }
     }
@@ -88,7 +88,7 @@ internal sealed class UnixSocketTransport : IMcpTransport
             catch (SocketException ex)
             {
                 // Transient: client RST, signal interrupt, fd pressure. Log and keep listening.
-                Console.Error.WriteLine($"[mcp] Transient accept error ({ex.SocketErrorCode}); continuing.");
+                McpLog.Write($"[mcp] Transient accept error ({ex.SocketErrorCode}); continuing.");
                 continue;
             }
 
