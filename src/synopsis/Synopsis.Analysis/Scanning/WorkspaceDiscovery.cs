@@ -60,7 +60,10 @@ public static class WorkspaceDiscovery
                     var fileName = Path.GetFileName(filePath);
                     var repo = FindOwner(filePath, repositories.Values);
 
-                    if (fileName.EndsWith(".sln", StringComparison.OrdinalIgnoreCase))
+                    // .slnx (default `dotnet new sln` format on .NET 9/10) opens like
+                    // classic .sln; not matching it reported 0 projects (GitHub issue #9).
+                    if (fileName.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
+                        || fileName.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
                     {
                         solutions.Add(new FoundSolution(
                             Path.GetFileNameWithoutExtension(filePath),
@@ -108,10 +111,27 @@ public static class WorkspaceDiscovery
         return new DiscoveryResult(
             normalizedRoot,
             [.. repositories.Values.OrderBy(r => r.RootPath, StringComparer.OrdinalIgnoreCase)],
-            [.. solutions.DistinctBy(s => s.FullPath, StringComparer.OrdinalIgnoreCase).OrderBy(s => s.FullPath, StringComparer.OrdinalIgnoreCase)],
+            [.. PreferSlnx(solutions).OrderBy(s => s.FullPath, StringComparer.OrdinalIgnoreCase)],
             [.. projects.DistinctBy(p => p.FullPath, StringComparer.OrdinalIgnoreCase).OrderBy(p => p.FullPath, StringComparer.OrdinalIgnoreCase)],
             [.. configs],
             [.. warnings]);
+    }
+
+    /// <summary>
+    /// When a directory holds both <c>X.sln</c> and <c>X.slnx</c> (mid-migration),
+    /// keep only the <c>.slnx</c>: loading both fails the second open with
+    /// "already part of the workspace".
+    /// </summary>
+    private static IEnumerable<FoundSolution> PreferSlnx(IEnumerable<FoundSolution> solutions)
+    {
+        var byPath = solutions.DistinctBy(s => s.FullPath, Paths.FileSystemComparer).ToList();
+        var slnxSiblings = byPath
+            .Where(s => s.FullPath.EndsWith(".slnx", StringComparison.OrdinalIgnoreCase))
+            .Select(s => s.FullPath[..^1])
+            .ToHashSet(Paths.FileSystemComparer);
+        return byPath.Where(s =>
+            !(s.FullPath.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)
+              && slnxSiblings.Contains(s.FullPath)));
     }
 
     private static FoundRepo? FindOwner(string filePath, IEnumerable<FoundRepo> repositories) =>

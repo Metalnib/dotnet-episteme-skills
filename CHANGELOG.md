@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.6.0] — 2026-07-24
+
+### Claude Code plugin
+- **Multi-agent code review** — `/dotnet-episteme-skills:dotnet-review` runs five read-only reviewers in parallel (correctness, performance, security/observability, data/messaging, generalist) plus an adversarial maintainer that re-verifies each finding with `file:line` evidence; reviewer model scales with change size (`--model` overrides).
+- **`plugin.json`** — dropped the empty `"agents": []` key that hid the new agents.
+
+### Synopsis
+- **MCP auto-start** — declared in the plugin `.mcp.json`; tools appear as `mcp__plugin_dotnet-episteme-skills_synopsis__*`, state under the plugin data dir. macOS/Linux, or Windows under WSL2.
+- **`schemaVersion`** — on every `--json` envelope and the MCP `initialize` handshake (`capabilities.experimental.synopsis`, mirrored in `serverInfo`); envelope string values are JSON-escaped.
+- **`--log-file <path>`** (env `SYNOPSIS_LOG_FILE`) — `synopsis mcp` also appends diagnostics to a file.
+- **Async startup scan** — `synopsis mcp --root` answers `initialize` immediately and scans in the background; `scan_stats` reports indexing status.
+- **Experimental log monitor** — `monitors/monitors.json`, interactive Claude Code only.
+- **Slim binaries** — framework-dependent `synopsis-<RID>-slim` archives alongside self-contained.
+
+### Scanning fixes
+- **`.slnx` discovery (#9)** — recognise the .NET 9/10 default solution format; a directory with both `X.sln` and `X.slnx` keeps only the `.slnx`.
+- **Transitive projects (#10)** — reused instead of dropped with "already part of the workspace".
+- **`--exclude` in solution mode (#8)** — now filters solution-loaded projects, not just filesystem discovery.
+
+### Dependencies
+- **Security refresh** — `System.Security.Cryptography.Xml` 10.0.6 → 10.0.10 (clears NuGet advisories); Roslyn 5.6.0, MSBuild 18.8.2, test tooling latest. Build green with audit on.
+
+### Docs and packaging
+- **`docs/`** — refactor plan and per-tool compatibility matrix; skills stay plain Agent Skills folders.
+- **`scripts/validate.sh`** — covers agents, commands, `.mcp.json`, and monitors.
+- **Version 1.6.0** — plugin, marketplace, binary, and skill metadata.
+
 ## [1.5.0] — 2026-04-24
 
 ### New MCP tools (Synopsis)

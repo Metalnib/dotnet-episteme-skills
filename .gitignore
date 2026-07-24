@@ -6,6 +6,9 @@ skills/dotnet-techne-synopsis/bin/
 **/obj/
 **/artifacts/
 
+# Plugin launcher scripts live in root bin/, not build output
+!/bin/
+
 # IDE
 .idea/
 .vs/

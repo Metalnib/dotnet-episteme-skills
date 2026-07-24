@@ -54,12 +54,16 @@ internal sealed class McpTools
     /// reindexed — protects against an MCP client pointing the scanner at
     /// arbitrary filesystem paths.
     /// </param>
-    public McpTools(CombinedGraph combined, WorkspaceScanner scanner, string? workspaceRoot = null)
+    public McpTools(CombinedGraph combined, WorkspaceScanner scanner, string? workspaceRoot = null,
+        IndexingState? indexing = null)
     {
         _combined = combined;
         _scanner = scanner;
         _workspaceRoot = workspaceRoot is null ? null : Path.GetFullPath(workspaceRoot);
+        _indexing = indexing ?? IndexingState.Idle;
     }
+
+    private readonly IndexingState _indexing;
 
     public static IReadOnlyList<McpToolDefinition> GetDefinitions() =>
     [
@@ -105,10 +109,28 @@ internal sealed class McpTools
 
     public bool CanHandle(string toolName) => Handlers.ContainsKey(toolName);
 
-    public Task<JsonNode> InvokeAsync(string toolName, JsonElement? arguments, CancellationToken ct) =>
-        Handlers.TryGetValue(toolName, out var handler)
-            ? handler(this, arguments, ct)
-            : throw new InvalidOperationException($"Unknown tool: {toolName}");
+    public Task<JsonNode> InvokeAsync(string toolName, JsonElement? arguments, CancellationToken ct)
+    {
+        if (!Handlers.TryGetValue(toolName, out var handler))
+            throw new InvalidOperationException($"Unknown tool: {toolName}");
+
+        // While the startup scan runs and nothing is hydrated yet, graph
+        // queries would only report an empty workspace; say why instead.
+        // scan_stats/list_repositories stay available for status polling.
+        if (_indexing.InProgress && _combined.Current.Nodes.Length == 0
+            && toolName is not ("scan_stats" or "list_repositories"))
+        {
+            var elapsed = DateTimeOffset.UtcNow - (_indexing.StartedAtUtc ?? DateTimeOffset.UtcNow);
+            JsonNode busy = new JsonObject
+            {
+                ["indexing"] = true,
+                ["message"] = $"Initial workspace scan in progress ({elapsed.TotalSeconds:F0}s elapsed); no graph data available yet. Retry shortly, or call scan_stats for status.",
+            };
+            return Task.FromResult(busy);
+        }
+
+        return handler(this, arguments, ct);
+    }
 
     private JsonNode BlastRadius(JsonElement? p)
     {
@@ -227,6 +249,12 @@ internal sealed class McpTools
     private JsonNode ScanStats(JsonElement? _)
     {
         var graph = Graph;
+        var indexing = new JsonObject { ["inProgress"] = _indexing.InProgress };
+        if (_indexing.StartedAtUtc is { } started)
+            indexing["startedAtUtc"] = started.ToString("O");
+        if (_indexing.Error is { } error)
+            indexing["error"] = error;
+
         var result = new JsonObject
         {
             ["statistics"] = Serialize(graph.Statistics, SynopsisJsonContext.Default.ScanStatistics),
@@ -234,6 +262,7 @@ internal sealed class McpTools
             ["nodeCount"] = graph.Nodes.Length,
             ["edgeCount"] = graph.Edges.Length,
             ["warningCount"] = graph.Warnings.Length,
+            ["indexing"] = indexing,
         };
         return result;
     }

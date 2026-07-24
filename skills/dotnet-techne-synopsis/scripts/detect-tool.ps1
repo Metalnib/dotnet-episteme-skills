@@ -40,40 +40,57 @@ foreach ($candidate in $candidates) {
 }
 
 # 4. Auto-download from GitHub Releases
-$asset = "synopsis-${rid}.zip"
-$url = "https://github.com/${Repo}/releases/latest/download/${asset}"
-
-Write-Host "Synopsis not found locally. Downloading for $rid..." -ForegroundColor Yellow
+# Prefer the slim framework-dependent build (~7x smaller) when a .NET 10 SDK
+# is present; fall back to the self-contained build (also when the release
+# predates slim assets).
+$assets = @("synopsis-${rid}.zip")
+$dotnetCmd = Get-Command dotnet -ErrorAction SilentlyContinue
+if ($dotnetCmd) {
+    $sdks = & dotnet --list-sdks 2>$null
+    if ($sdks -match '^10\.') {
+        $assets = @("synopsis-${rid}-slim.zip", "synopsis-${rid}.zip")
+    }
+}
 
 $targetDir = Join-Path $binDir $rid
 New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
 
-$zipPath = Join-Path $targetDir $asset
-try {
-    # Use .NET HttpClient directly - no external deps, handles redirects
-    $handler = [System.Net.Http.HttpClientHandler]::new()
-    $handler.AllowAutoRedirect = $true
-    $client = [System.Net.Http.HttpClient]::new($handler)
-    $client.Timeout = [TimeSpan]::FromMinutes(5)
+$downloaded = $null
+foreach ($asset in $assets) {
+    $url = "https://github.com/${Repo}/releases/latest/download/${asset}"
+    Write-Host "Synopsis not found locally. Downloading $asset..." -ForegroundColor Yellow
 
-    $response = $client.GetAsync($url).Result
-    if (-not $response.IsSuccessStatusCode) {
-        Write-Error "Download failed (HTTP $($response.StatusCode)) from $url`nNo release found. Build from source: cd $repoRoot\src\synopsis && dotnet publish Synopsis/Synopsis.csproj -c Release -r $rid"
-        exit 1
+    $zipPath = Join-Path $targetDir $asset
+    try {
+        # Use .NET HttpClient directly - no external deps, handles redirects
+        $handler = [System.Net.Http.HttpClientHandler]::new()
+        $handler.AllowAutoRedirect = $true
+        $client = [System.Net.Http.HttpClient]::new($handler)
+        $client.Timeout = [TimeSpan]::FromMinutes(5)
+
+        $response = $client.GetAsync($url).Result
+        if ($response.IsSuccessStatusCode) {
+            $bytes = $response.Content.ReadAsByteArrayAsync().Result
+            [System.IO.File]::WriteAllBytes($zipPath, $bytes)
+            $downloaded = $zipPath
+        }
+        $client.Dispose()
+    } catch {
+        Remove-Item $zipPath -ErrorAction SilentlyContinue
     }
 
-    $bytes = $response.Content.ReadAsByteArrayAsync().Result
-    [System.IO.File]::WriteAllBytes($zipPath, $bytes)
-    $client.Dispose()
-} catch {
-    Remove-Item $zipPath -ErrorAction SilentlyContinue
-    Write-Error "Download failed: $_`nBuild from source: cd $repoRoot\src\synopsis && dotnet publish Synopsis/Synopsis.csproj -c Release -r $rid"
+    if ($downloaded) { break }
+    Write-Host "Download failed for $asset; trying next variant." -ForegroundColor Yellow
+}
+
+if (-not $downloaded) {
+    Write-Error "Download failed from GitHub Releases ($Repo).`nNo release found. Build from source: cd $repoRoot\src\synopsis && dotnet publish Synopsis/Synopsis.csproj -c Release -r $rid"
     exit 1
 }
 
 # Extract - Expand-Archive is built into PowerShell 5+
-Expand-Archive -Path $zipPath -DestinationPath $targetDir -Force
-Remove-Item $zipPath -ErrorAction SilentlyContinue
+Expand-Archive -Path $downloaded -DestinationPath $targetDir -Force
+Remove-Item $downloaded -ErrorAction SilentlyContinue
 
 if (Test-Path $binary) {
     Write-Host "Downloaded synopsis to $binary" -ForegroundColor Green

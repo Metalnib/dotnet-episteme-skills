@@ -13,11 +13,12 @@ internal sealed class McpServer
 
     /// <param name="workspaceRoot">
     /// Optional sandbox root for <c>reindex_repository</c> — see
-    /// <see cref="McpTools(CombinedGraph, WorkspaceScanner, string?)"/>.
+    /// <see cref="McpTools(CombinedGraph, WorkspaceScanner, string?, IndexingState?)"/>.
     /// </param>
-    public McpServer(CombinedGraph combined, WorkspaceScanner scanner, string? workspaceRoot = null)
+    public McpServer(CombinedGraph combined, WorkspaceScanner scanner, string? workspaceRoot = null,
+        IndexingState? indexing = null)
     {
-        _tools = new McpTools(combined, scanner, workspaceRoot);
+        _tools = new McpTools(combined, scanner, workspaceRoot, indexing);
     }
 
     /// <summary>
@@ -29,7 +30,7 @@ internal sealed class McpServer
     /// </summary>
     public async Task RunAsync(IMcpTransport transport, CancellationToken ct)
     {
-        Console.Error.WriteLine($"[mcp] Synopsis MCP server ready on {transport.Name}.");
+        McpLog.Write($"[mcp] Synopsis MCP server ready on {transport.Name}.");
 
         // ConcurrentDictionary + continuation self-removal: O(1) tracking and
         // automatic cleanup as connections complete, instead of scanning a
@@ -74,7 +75,7 @@ internal sealed class McpServer
         }
         catch { /* per-connection errors already logged inside HandleConnectionAsync */ }
 
-        Console.Error.WriteLine("[mcp] Server stopped.");
+        McpLog.Write("[mcp] Server stopped.");
     }
 
     private async Task HandleConnectionAsync(IMcpConnection connection, CancellationToken ct)
@@ -113,7 +114,7 @@ internal sealed class McpServer
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[mcp] Connection error: {ex.Message}");
+            McpLog.Write($"[mcp] Connection error: {ex.Message}");
         }
     }
 
@@ -143,14 +144,20 @@ internal sealed class McpServer
             ["protocolVersion"] = "2024-11-05",
             ["capabilities"] = new JsonObject
             {
-                ["tools"] = new JsonObject { ["listChanged"] = false }
+                ["tools"] = new JsonObject { ["listChanged"] = false },
+                // Spec extension point for custom handshake data; mirrored in serverInfo below.
+                ["experimental"] = new JsonObject
+                {
+                    ["synopsis"] = new JsonObject { ["schemaVersion"] = SynopsisSchema.EnvelopeVersion }
+                }
             },
             ["serverInfo"] = new JsonObject
             {
                 ["name"] = "synopsis",
                 ["version"] = typeof(McpServer).Assembly
                     .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-                    ?.InformationalVersion ?? "unknown"
+                    ?.InformationalVersion ?? "unknown",
+                ["schemaVersion"] = SynopsisSchema.EnvelopeVersion
             }
         });
 

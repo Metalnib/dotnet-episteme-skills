@@ -31,7 +31,7 @@ internal sealed class TcpTransport : IMcpTransport
         // Anything else (0.0.0.0, public IP, LAN IP, …) exposes the daemon.
         if (!IPAddress.IsLoopback(_boundEndpoint.Address))
         {
-            Console.Error.WriteLine(
+            McpLog.Write(
                 $"[mcp] WARNING: listening on {_boundEndpoint} (non-loopback). MCP has no auth — " +
                 "any host that can reach this port can call tools against the graph.");
         }
@@ -89,7 +89,7 @@ internal sealed class TcpTransport : IMcpTransport
             catch (SocketException ex)
             {
                 // Transient: client RST, signal interrupt, fd pressure. Log and keep listening.
-                Console.Error.WriteLine($"[mcp] Transient accept error ({ex.SocketErrorCode}); continuing.");
+                McpLog.Write($"[mcp] Transient accept error ({ex.SocketErrorCode}); continuing.");
                 continue;
             }
 

@@ -49,36 +49,54 @@ if [[ -z "$RID" ]]; then
     exit 1
 fi
 
-ASSET="synopsis-${RID}.tar.gz"
-URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
+# Prefer the slim framework-dependent build (~7x smaller) when a .NET 10 SDK
+# is present; fall back to the self-contained build (also when the release
+# predates slim assets).
+ASSETS=("synopsis-${RID}.tar.gz")
+if command -v dotnet &>/dev/null && dotnet --list-sdks 2>/dev/null | grep -q '^10\.'; then
+    ASSETS=("synopsis-${RID}-slim.tar.gz" "synopsis-${RID}.tar.gz")
+fi
 
-echo "Synopsis not found locally. Downloading for $RID..." >&2
-
-mkdir -p "$BIN_DIR/$RID"
-
-if command -v curl &>/dev/null; then
-    HTTP_CODE=$(curl -sL -w "%{http_code}" -o "$BIN_DIR/$RID/$ASSET" "$URL")
-    if [[ "$HTTP_CODE" != "200" ]]; then
-        rm -f "$BIN_DIR/$RID/$ASSET"
-        echo "ERROR: Download failed (HTTP $HTTP_CODE) from $URL" >&2
-        echo "No release found. Build from source: cd $REPO_ROOT/src/synopsis && ./publish-all.sh" >&2
-        exit 1
-    fi
-elif command -v wget &>/dev/null; then
-    if ! wget -q -O "$BIN_DIR/$RID/$ASSET" "$URL" 2>/dev/null; then
-        rm -f "$BIN_DIR/$RID/$ASSET"
-        echo "ERROR: Download failed from $URL" >&2
-        echo "No release found. Build from source: cd $REPO_ROOT/src/synopsis && ./publish-all.sh" >&2
-        exit 1
-    fi
-else
+if ! command -v curl &>/dev/null && ! command -v wget &>/dev/null; then
     echo "ERROR: curl or wget required to download synopsis." >&2
     exit 1
 fi
 
+mkdir -p "$BIN_DIR/$RID"
+
+download_asset() {
+    local asset="$1"
+    local url="https://github.com/${REPO}/releases/latest/download/${asset}"
+    if command -v curl &>/dev/null; then
+        local http_code
+        http_code=$(curl -sL -w "%{http_code}" -o "$BIN_DIR/$RID/$asset" "$url")
+        [[ "$http_code" == "200" ]] && return 0
+    else
+        wget -q -O "$BIN_DIR/$RID/$asset" "$url" 2>/dev/null && return 0
+    fi
+    rm -f "$BIN_DIR/$RID/$asset"
+    return 1
+}
+
+DOWNLOADED=""
+for ASSET in "${ASSETS[@]}"; do
+    echo "Synopsis not found locally. Downloading $ASSET..." >&2
+    if download_asset "$ASSET"; then
+        DOWNLOADED="$ASSET"
+        break
+    fi
+    echo "Download failed for $ASSET; trying next variant." >&2
+done
+
+if [[ -z "$DOWNLOADED" ]]; then
+    echo "ERROR: Download failed from GitHub Releases ($REPO)." >&2
+    echo "No release found. Build from source: cd $REPO_ROOT/src/synopsis && ./publish-all.sh" >&2
+    exit 1
+fi
+
 # Extract
-tar -xzf "$BIN_DIR/$RID/$ASSET" -C "$BIN_DIR/$RID/"
-rm -f "$BIN_DIR/$RID/$ASSET"
+tar -xzf "$BIN_DIR/$RID/$DOWNLOADED" -C "$BIN_DIR/$RID/"
+rm -f "$BIN_DIR/$RID/$DOWNLOADED"
 chmod +x "$BINARY"
 
 if [[ -x "$BINARY" ]]; then

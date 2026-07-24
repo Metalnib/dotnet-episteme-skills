@@ -19,7 +19,7 @@ public sealed class WorkspaceLoader
         EnsureMsBuildRegistered();
 
         var warnings = new List<ScanWarning>();
-        var loadedProjects = new Dictionary<string, (Project Project, string? SolutionPath)>(StringComparer.OrdinalIgnoreCase);
+        var loadedProjects = new Dictionary<string, (Project Project, string? SolutionPath)>(Paths.FileSystemComparer);
         var workspace = MSBuildWorkspace.Create(new Dictionary<string, string>
         {
             ["DesignTimeBuild"] = "true",
@@ -29,6 +29,19 @@ public sealed class WorkspaceLoader
 
         workspace.RegisterWorkspaceFailedHandler(args =>
             warnings.Add(new ScanWarning("workspace-failed", args.Diagnostic.Message, null, Certainty.Ambiguous)));
+
+        // Incremental so the reuse lookup below is O(1) with each path normalized once.
+        var workspaceIndex = new Dictionary<string, Project>(Paths.FileSystemComparer);
+        var indexedProjectIds = new HashSet<ProjectId>();
+        void IndexWorkspaceProjects()
+        {
+            foreach (var p in workspace.CurrentSolution.Projects)
+            {
+                if (p.Language != LanguageNames.CSharp || p.FilePath is null) continue;
+                if (indexedProjectIds.Add(p.Id))
+                    workspaceIndex[Paths.Normalize(p.FilePath)] = p;
+            }
+        }
 
         var totalItems = discovery.Solutions.Length + discovery.Projects.Length;
         var processed = 0;
@@ -47,9 +60,15 @@ public sealed class WorkspaceLoader
                 var opened = await workspace.OpenSolutionAsync(solution.FullPath, cancellationToken: ct);
                 foreach (var project in opened.Projects.Where(p => p.Language == LanguageNames.CSharp))
                 {
+                    // --exclude must filter solution-loaded projects too (GitHub issue #8).
+                    if (project.FilePath is { } excludable
+                        && Paths.IsExcluded(excludable, discovery.RootPath, options.ExcludedPaths))
+                        continue;
+
                     var key = Paths.Normalize(project.FilePath ?? project.Name);
                     loadedProjects[key] = (project, solution.FullPath);
                 }
+                IndexWorkspaceProjects();
                 processed++;
             }
             catch (Exception ex)
@@ -70,6 +89,15 @@ public sealed class WorkspaceLoader
                 continue;
             }
 
+            // Reuse a project already pulled in transitively; re-opening throws
+            // "already part of the workspace" and silently drops it (GitHub issue #10).
+            if (workspaceIndex.TryGetValue(looseProject.FullPath, out var alreadyLoaded))
+            {
+                loadedProjects[looseProject.FullPath] = (alreadyLoaded, null);
+                processed++;
+                continue;
+            }
+
             try
             {
                 if (ShouldReport(idx, discovery.Projects.Length, 25))
@@ -78,6 +106,7 @@ public sealed class WorkspaceLoader
 
                 var project = await workspace.OpenProjectAsync(looseProject.FullPath, cancellationToken: ct);
                 loadedProjects[looseProject.FullPath] = (project, null);
+                IndexWorkspaceProjects();
                 processed++;
             }
             catch (Exception ex)

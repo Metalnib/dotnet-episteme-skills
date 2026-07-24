@@ -6,12 +6,16 @@ cd "$SCRIPT_DIR"
 
 SKILL_BIN="$SCRIPT_DIR/../../skills/dotnet-techne-synopsis/bin"
 RELEASE_DIR="$SCRIPT_DIR/artifacts/release"
+SLIM_DIR="$SCRIPT_DIR/artifacts/slim"
 
 RIDS=("osx-arm64" "osx-x64" "win-x64" "win-arm64" "linux-x64" "linux-arm64")
 
 for RID in "${RIDS[@]}"; do
     echo "=== Publishing $RID ==="
     dotnet publish Synopsis/Synopsis.csproj -c Release -r "$RID"
+    echo "=== Publishing $RID (slim, framework-dependent) ==="
+    dotnet publish Synopsis/Synopsis.csproj -c Release -r "$RID" \
+        --self-contained false -p:PublishReadyToRun=false -o "$SLIM_DIR/$RID"
     echo ""
 done
 
@@ -33,12 +37,20 @@ for RID in "${RIDS[@]}"; do
         rm -f "$ARCHIVE"
         (cd "$SKILL_BIN/$RID" && zip -r -q "$ARCHIVE" .)
         echo "  $ARCHIVE ($(du -sh "$ARCHIVE" | cut -f1))"
+        SLIM_ARCHIVE="$RELEASE_DIR/synopsis-${RID}-slim.zip"
+        rm -f "$SLIM_ARCHIVE"
+        (cd "$SLIM_DIR/$RID" && zip -r -q "$SLIM_ARCHIVE" .)
+        echo "  $SLIM_ARCHIVE ($(du -sh "$SLIM_ARCHIVE" | cut -f1))"
     else
         # macOS/Linux: tar.gz
         ARCHIVE="$RELEASE_DIR/synopsis-${RID}.tar.gz"
         rm -f "$ARCHIVE"
         tar -czf "$ARCHIVE" -C "$SKILL_BIN/$RID" .
         echo "  $ARCHIVE ($(du -sh "$ARCHIVE" | cut -f1))"
+        SLIM_ARCHIVE="$RELEASE_DIR/synopsis-${RID}-slim.tar.gz"
+        rm -f "$SLIM_ARCHIVE"
+        tar -czf "$SLIM_ARCHIVE" -C "$SLIM_DIR/$RID" .
+        echo "  $SLIM_ARCHIVE ($(du -sh "$SLIM_ARCHIVE" | cut -f1))"
     fi
 done
 

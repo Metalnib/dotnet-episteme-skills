@@ -2,7 +2,7 @@
   "name": "dotnet-episteme-skills",
   "displayName": "DotNet Episteme Skills",
   "description": "Practical, production-tested .NET skills that provide enterprise-proven instructions for AI-assisted development.",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "license": "MIT",
   "author": {
     "name": "Metalnib"
@@ -10,6 +10,5 @@
   "repository": "https://github.com/Metalnib/dotnet-episteme-skills",
   "skills": [
     "./skills"
-  ],
-  "agents": []
+  ]
 }

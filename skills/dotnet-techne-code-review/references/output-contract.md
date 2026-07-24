@@ -9,7 +9,7 @@ Use this structure exactly when presenting findings.
 ## Findings
 Each finding must include:
 - **Severity:** blocking / important / suggestion
-- **Area:** correctness | style | performance | AOT | security | DB | messaging | logging
+- **Area:** correctness | style | performance | AOT | security | DB | messaging | integration | logging | general
 - **Location:** file + line + type/method
 - **Evidence:** short code snippet or command evidence
 - **Impact:** production failure mode
@@ -28,6 +28,7 @@ Each finding must include:
 - Keep descriptions concrete and evidence-based.
 
 ## Halt conditions
+- The review itself is read-only: never apply fixes as part of the review - act only on an explicit follow-up request (offering to is fine).
 - HALT and ask for clarification if there is no content to review.
 - In cynical mode, if findings are zero, run one more adversarial pass from a different lens (correctness/perf/security/data/messaging).
 - If findings are still zero, report "No confirmed issues after adversarial pass" and request deeper or narrower context.
