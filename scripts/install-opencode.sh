@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Installs the OpenCode plugin from this checkout by symlinking it into
-# OpenCode's global plugin directory. The symlink keeps `git pull` as the
-# update path: the plugin resolves its own location, so it always reads the
-# skills, agents, and command template from this repo.
+# Installs the OpenCode plugin from this checkout. The symlink keeps `git pull`
+# as the update path: the plugin resolves its own location at load time.
 #
 #   scripts/install-opencode.sh              install (and verify)
 #   scripts/install-opencode.sh --verify     verify an existing install only
@@ -36,8 +34,7 @@ if [ "$MODE" = "install" ]; then
   ln -sf "$PLUGIN_SRC" "$LINK"
   echo "Linked $LINK -> $PLUGIN_SRC"
 
-  # A hand-copied Claude agent file in OpenCode's agent dir breaks config
-  # resolution for the whole session, so flag it rather than let it puzzle them.
+  # Such a file breaks config resolution for the whole session.
   if [ -d "$CONFIG_DIR/agent" ] || [ -d "$CONFIG_DIR/agents" ]; then
     for dir in "$CONFIG_DIR/agent" "$CONFIG_DIR/agents"; do
       [ -d "$dir" ] || continue
@@ -51,9 +48,8 @@ if [ "$MODE" = "install" ]; then
 fi
 
 if [ "$MODE" = "install" ]; then
-  # Pre-warm the Synopsis binary. A fresh clone ships no bin/ (gitignored), and
-  # OpenCode gives an MCP server a short startup window — long enough to launch
-  # the binary, not to download it from GitHub Releases first.
+  # A fresh clone has no bin/, and the MCP startup window is too short to
+  # download one.
   DETECT="$REPO_ROOT/skills/dotnet-techne-synopsis/scripts/detect-tool.sh"
   if [ -x "$DETECT" ]; then
     if binary="$("$DETECT" 2>/dev/null)"; then

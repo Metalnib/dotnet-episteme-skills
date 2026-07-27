@@ -3,33 +3,26 @@
 ## [1.7.0] — 2026-07-27
 
 ### OpenCode plugin (new)
-- **`opencode/dotnet-episteme.js`** — a native OpenCode plugin whose `config` hook registers what the Claude Code plugin registers: the skills path, the five reviewers plus the adversarial maintainer as `review-*` subagents, the `/dotnet-review` command, and the Synopsis MCP server. Reviewer prompts are read from `agents/review/*.md` at load time, so those files stay the single source of truth; their Claude frontmatter is discarded, because a comma-string `tools:` key fails OpenCode's schema and takes down config resolution for the whole session.
-- **Read-only reviewer sandbox** — registered as per-agent `permission` rules (`edit`/`webfetch` denied, bash restricted to `git diff|log|show|blame|status|rev-parse|merge-base`), replacing `hooks/git-readonly-guard.sh` on OpenCode. Stricter in one respect: the allow patterns anchor on the subcommand, so `git -C <other repo> diff` matches no allow rule, and OpenCode parses chained commands, so `git status && rm -rf x` is denied.
-- **`opencode/dotnet-review.template.md`** — the orchestrator adapted to OpenCode: no `Workflow` step (no workflow runtime exists), `{{PLUGIN_ROOT}}` resolved at load time (OpenCode does not expand variables in command templates), flat `review-*` subagent names, and tier guidance that matches the runtime.
-- **Optional model tiering** — OpenCode's `task` tool has no per-invocation `model`, so `DOTNET_EPISTEME_STRONG_MODEL` (or plugin option `strongModel`) registers a pinned `review-<lane>-strong` variant of every lane and the command is told to dispatch those when the sizing table calls for a stronger tier.
-- **`scripts/install-opencode.sh` / `.ps1`** — symlink install (so `git pull` is the update path), a warning when a hand-copied Claude agent file is found in OpenCode's agent directory, Synopsis binary pre-warm (a fresh clone has no `bin/`, and OpenCode's MCP startup window is too short to download one), and CLI verification of all four registrations. `--verify` / `--uninstall` supported.
-- **`docs/opencode-setup.md`** — install, verification, the optional strong tier, the v1/v2 config-shape traps (one v2-shaped key in a v1 document silently discards the whole file), and troubleshooting.
+- `opencode/dotnet-episteme.js` registers the 10 skills, the five reviewers plus the adversarial maintainer as `review-*` subagents, `/dotnet-review`, and the Synopsis MCP server. Reviewer prompts come from `agents/review/*.md`, so the lanes stay single-sourced across tools.
+- Reviewers are read-only: `edit` and `webfetch` denied, bash limited to read-only git.
+- `DOTNET_EPISTEME_STRONG_MODEL` (or plugin option `strongModel`) registers pinned `review-<lane>-strong` variants, because OpenCode's `task` tool takes no per-call model.
+- `scripts/install-opencode.sh` / `.ps1`: symlink install, Synopsis pre-warm, CLI verification, `--verify` / `--uninstall`.
 
 ### Codex plugin (new)
-- **`.codex-plugin/plugin.json`** — a spec-compliant Codex manifest (kebab-case name, semver, `author.name`, `interface` block; no `hooks` field, which Codex validation rejects). `codex plugin marketplace add Metalnib/dotnet-episteme-skills` + `codex plugin add dotnet-episteme-skills@dotnet-episteme-marketplace` then installs the skills, the Synopsis MCP server, and the read-only git guard. Verified on codex-cli 0.145.0.
-- **`codex/mcp.json`** — fixes the MCP server on Codex. Codex stores an MCP command literally and spawns it directly, so `${CLAUDE_PLUGIN_ROOT}` produced `MCP startup failed: No such file or directory`; plugin-spawned MCP processes also receive no `PLUGIN_ROOT`/`CLAUDE_PLUGIN_ROOT` (only hooks do). The entry now resolves the shared launcher from `$HOME` through a shell, newest cache entry first, and sets `startup_timeout_sec = 120` so a first-run binary download cannot blow the startup window.
-- **`codex/skills/dotnet-techne-review-pipeline`** — the orchestrator as a skill, because Codex has no custom slash commands (`~/.codex/prompts` is not a feature of 0.145.0). It lives in a second skills root declared by the Codex manifest, so Claude Code and OpenCode never see a competing review entry point.
-- **`scripts/install-codex.sh`** — registers the six `review-*` roles in `config.toml` (plugins cannot ship roles), each with a TOML layer whose `model_instructions_file` points at a frontmatter-stripped copy of the same `agents/review/*.md` body the other two tools use, and `sandbox_mode = "read-only"` for enforcement. Idempotent through a marked block, with `--verify` / `--uninstall` and Synopsis binary pre-warm.
-- **Concurrency and cost** — `install-codex.sh` sets `agents.max_concurrent_threads_per_session = 6` (skipped, with a printed note, when you configure `[agents]` yourself), because Codex's default cap makes the five "parallel" reviewers run in waves of three. The pipeline skill now states the six-agent-turn cost before fanning out and offers the single-context review skill for small diffs — a two-commit review was enough to exhaust a free monthly allowance in testing.
-- **`hooks/git-readonly-guard.sh`** — exits early when the payload has no `agent_type`. Codex sends it only on `SubagentStart`/`SubagentStop`, never on `PreToolUse`, so the guard has no reviewer to scope to there and now says so explicitly instead of spawning `python3` on every command.
+- `.codex-plugin/plugin.json` and `codex/mcp.json`: `codex plugin add` installs the skills, the Synopsis MCP server, and the read-only git guard.
+- `codex/skills/dotnet-techne-review-pipeline` drives the multi-agent review, since Codex has no custom slash commands.
+- `scripts/install-codex.sh` registers the six `review-*` roles with `sandbox_mode = "read-only"` and raises `agents.max_concurrent_threads_per_session` to 6 so the lanes run in parallel. Idempotent, `--verify` / `--uninstall`.
+- The pipeline states its six-agent-turn cost before fanning out and offers the single-context review skill for small diffs.
+- `hooks/git-readonly-guard.sh` stays out of the way on Codex, whose `PreToolUse` payload carries no `agent_type`.
 
 ### Packaging
-- **npm package `opencode-dotnet-episteme`** — `package.json` publishes the OpenCode plugin with the skills, reviewer prompts, and Synopsis launcher (99 files; platform binaries stay auto-downloaded), so installing is `opencode plugin opencode-dotnet-episteme -g`. This is also the only path that can configure the plugin: options reach plugins declared in config, not plugins dropped into the plugin directory as files, so `{ "strongModel": "…" }` works here while the file install needs the env var.
-- **Release automation** — a tag-gated `publish-npm` job verifies tag/`package.json` alignment, re-runs the registration test, and publishes with provenance; it skips cleanly until the `NPM_TOKEN` secret exists. The skills archive now also carries `opencode/`, `hooks/`, and `package.json`.
-- **`scripts/validate.sh`** — fails when `package.json` and `.claude-plugin/plugin.json` versions drift, or when `main` points at a missing file.
+- `package.json` packages the OpenCode plugin; a tag-gated `publish-npm` job publishes it once an `NPM_TOKEN` secret exists, and skips without one.
+- The release archive carries `.codex-plugin/`, `codex/`, `opencode/`, `hooks/` and `package.json`.
+- MIT `LICENSE`.
 
 ### Fixes
-- **`scripts/validate.sh` workflow check** — `node --check` rejected `workflows/dotnet-review.js` because workflow scripts execute as an async function body, where top-level `return`/`await` are legal; the check now parses them the way the runtime does. This failure made validation red on `main`.
-
-### Docs
-- **`docs/tool-compatibility.md`** — corrected two false OpenCode rows (multi-subagent review and maintainer pushback are supported there, not "single-context only"), rewrote the Codex notes around what was measured on codex-cli 0.145.0, and added rows for the reviewer sandbox and per-reviewer model tier. Contributors: tool-specific behaviour belongs in `opencode/`, `.codex-plugin/`, `codex/` — `agents/review/*.md` stay Claude-shaped and both other tools convert them.
-- **`docs/codex-setup.md`, `docs/opencode-setup.md`** — install, verification commands, and the per-tool traps worth knowing before hand-editing config.
-- **`README.md`** — three plugin install paths; the skills count in the install table said 9, not 10.
+- `scripts/validate.sh`: workflow scripts are parsed as an async function body, so `node --check` no longer rejects `workflows/dotnet-review.js`. New checks cover the Codex manifest and version drift across `plugin.json`, `.codex-plugin/plugin.json` and `package.json`.
+- Release notes counted skill roots, so they reported 1 skill instead of 10.
 
 ## [1.6.0] — 2026-07-24
 

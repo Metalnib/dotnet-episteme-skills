@@ -5,9 +5,8 @@ set -euo pipefail
 
 INPUT="$(cat)"
 
-# Codex sends no agent_type on PreToolUse (only SubagentStart/Stop carry it), so
-# there is no reviewer to scope to: exit before paying for a python3 spawn on
-# every command. Reviewer read-only there comes from each role's sandbox_mode.
+# No agent_type (Codex) means there is no reviewer to scope to; skip the check
+# rather than spawn python3 on every command.
 case "$INPUT" in
   *'"agent_type"'*) ;;
   *) exit 0 ;;

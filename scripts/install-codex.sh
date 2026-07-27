@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 # Registers the six review roles with Codex and pre-warms the Synopsis binary.
-#
-# Skills, the Synopsis MCP server, and the read-only git guard come from the
-# plugin itself (`codex plugin add dotnet-episteme-skills@dotnet-episteme-marketplace`).
-# Agent roles cannot ship inside a plugin - Codex reads them from the [agents]
-# table in config.toml - so this script writes them, from either a clone or the
-# installed plugin cache.
+# Roles cannot ship inside a plugin: Codex only reads them from config.toml.
 #
 #   scripts/install-codex.sh              register roles (and pre-warm)
 #   scripts/install-codex.sh --verify     report what is registered
@@ -66,9 +61,7 @@ if [ "$MODE" = "install" ]; then
   BLOCK_FILE="$(mktemp)"
   trap 'rm -f "$BLOCK_FILE" "$CONFIG.tmp"' EXIT
 
-  # One instruction file plus one TOML config layer per lane. The reviewer prompt
-  # is the body of the Claude agent file - same single source, frontmatter dropped,
-  # because Codex takes instructions from a file and everything else from TOML keys.
+  # Reviewer prompts come from agents/review/*.md so all tools share one copy.
   ROOT="$ROOT" ROLE_DIR="$ROLE_DIR" BLOCK_OUT="$BLOCK_FILE" python3 - <<'PY'
 import os, pathlib, sys
 
@@ -93,8 +86,7 @@ for src in sorted((root / "agents" / "review").glob("*.md")):
     if not body or not description:
         sys.exit(f"{src} is missing a description or a body")
 
-    # Codex shows this description when choosing a role, and it has no
-    # /dotnet-review command - the review-pipeline skill drives the fan-out.
+    # Codex has no /dotnet-review command; the pipeline skill drives the review.
     description = description.replace("the dotnet-review command", "the review-pipeline skill")
 
     name = f"review-{src.stem}"
@@ -103,8 +95,7 @@ for src in sorted((root / "agents" / "review").glob("*.md")):
     instructions.write_text(body + "\n", encoding="utf-8")
     layer.write_text(
         f'model_instructions_file = "{instructions}"\n'
-        # Reviewers must never write. On Codex the plugin's PreToolUse guard cannot
-        # scope itself to a role, so the sandbox carries the restriction instead.
+        # The guard cannot scope to a role on Codex, so the sandbox enforces this.
         'sandbox_mode = "read-only"\n',
         encoding="utf-8",
     )
@@ -115,9 +106,8 @@ pathlib.Path(os.environ["BLOCK_OUT"]).write_text("\n".join(block), encoding="utf
 print(f"Wrote {len(block)} role layers to {roles}")
 PY
 
-  # Codex defaults to fewer concurrent agent threads than this pipeline needs, so
-  # five "parallel" reviewers actually run in waves. Only emit the [agents] header
-  # when the user has none of their own - two headers for one table is a TOML error.
+  # Without this the five reviewers run in waves. Emitting a second [agents]
+  # header would be a TOML error, so skip when the user already has one.
   if [ -f "$CONFIG" ] && strip_block | grep -qE '^\[agents\]|^agents\.max_concurrent_threads_per_session'; then
     echo "NOTE  you already configure [agents] yourself - leaving concurrency alone."
     echo "      For a full parallel fan-out set: agents.max_concurrent_threads_per_session = 6"
@@ -137,8 +127,7 @@ PY
   mv "$CONFIG.tmp" "$CONFIG"
   echo "Registered the review roles in $CONFIG"
 
-  # Codex gives an MCP server a bounded startup window; downloading the binary
-  # inside it would blow the budget on a cold cache.
+  # A cold download would exceed the MCP startup window.
   DETECT="$ROOT/skills/dotnet-techne-synopsis/scripts/detect-tool.sh"
   if [ -x "$DETECT" ] && binary="$("$DETECT" 2>/dev/null)"; then
     echo "Synopsis binary ready: $binary"
@@ -168,8 +157,7 @@ for lane in $LANES; do
 done
 
 if command -v codex >/dev/null 2>&1; then
-  # A malformed config.toml breaks every codex command, so any config-reading
-  # command doubles as a syntax check.
+  # Any config-reading command doubles as a syntax check.
   if codex mcp list >/dev/null 2>&1; then
     echo "  OK    codex parses config.toml"
   else

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// Exercises opencode/dotnet-episteme.js against a fake config object, so CI
-// catches a broken registration without an OpenCode install. Run: node scripts/test-opencode-plugin.mjs
+// Checks the plugin's registrations without needing an OpenCode install.
 import { accessSync, constants } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -94,7 +93,7 @@ check(
 )
 check("strong tier is opt-in", !config.agent?.["review-correctness-strong"])
 
-// A user's own definitions must survive plugin registration.
+// A user's own definitions must survive registration.
 const preset = { agent: { "review-correctness": { description: "mine" } }, command: {}, mcp: {} }
 await (await DotnetEpisteme({ directory: ROOT }, undefined)).config(preset)
 check("existing user definitions are not clobbered", preset.agent["review-correctness"].description === "mine")

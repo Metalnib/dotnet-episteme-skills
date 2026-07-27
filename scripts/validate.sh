@@ -224,9 +224,8 @@ if [ -d "$WORKFLOWS_DIR" ]; then
       continue
     fi
     if command -v node >/dev/null 2>&1; then
-      # Workflow scripts run as an async function body, where top-level return
-      # and await are legal, so `node --check` rejects valid scripts. Parse them
-      # the way the runtime does: strip the meta export, wrap, construct (never call).
+      # Workflow scripts run as an async function body, so `node --check`
+      # rejects valid ones. Parse as the runtime does; construct, never call.
       if ! node -e '
 const fs = require("fs");
 const src = fs.readFileSync(process.argv[1], "utf8").replace(/^export\s+const\s+meta/m, "const meta");
@@ -252,8 +251,7 @@ if [ -f "$PACKAGE_JSON" ]; then
   if ! python3 -m json.tool "$PACKAGE_JSON" > /dev/null 2>&1; then
     err "package.json is not valid JSON"
   else
-    # The npm package and the plugin ship as one release, so a drifting version
-    # would publish an OpenCode plugin that disagrees with the marketplace entry.
+    # One release, one version: drift would publish mismatched artefacts.
     pkg_version="$(python3 -c "import json; print(json.load(open('$PACKAGE_JSON')).get('version',''))")"
     plugin_version="$(python3 -c "import json; print(json.load(open('$PLUGIN_JSON')).get('version',''))")"
     if [ "$pkg_version" != "$plugin_version" ]; then
@@ -307,8 +305,7 @@ if [ -d "$OPENCODE_DIR" ]; then
     fi
   done
 
-  # A comma-string `tools:` key fails OpenCode's config decode and takes the
-  # whole document with it, so it must never appear in OpenCode-consumed files.
+  # A comma-string `tools:` key makes OpenCode reject the whole document.
   if grep -rlE '^tools: *[A-Za-z]+,' "$OPENCODE_DIR" 2>/dev/null | grep -q .; then
     err "opencode/ contains a comma-string 'tools:' key - invalid in OpenCode's agent schema"
   else
@@ -322,8 +319,7 @@ if [ -f "$CODEX_MANIFEST" ]; then
   if ! python3 -m json.tool "$CODEX_MANIFEST" > /dev/null 2>&1; then
     err ".codex-plugin/plugin.json is not valid JSON"
   else
-    # Rules from the published plugin.json spec: kebab-case name, strict semver,
-    # and `hooks` is rejected outright (Codex discovers hooks/hooks.json itself).
+    # Rules from the published plugin.json spec.
     if ! CODEX_MANIFEST="$CODEX_MANIFEST" PLUGIN_JSON="$PLUGIN_JSON" REPO_ROOT="$REPO_ROOT" python3 - <<'PY'
 import json
 import os
@@ -382,8 +378,7 @@ PY
     err "scripts/install-codex.sh is missing or not executable"
   fi
 
-  # The Codex-only orchestrator skill lives outside the shared skills root, so
-  # the loop above never sees it.
+  # This skill lives outside the shared skills root, so the loop above misses it.
   while IFS= read -r codex_skill; do
     [ -z "$codex_skill" ] && continue
     rel_path="${codex_skill#"$REPO_ROOT"/}"

@@ -1,21 +1,10 @@
 /**
- * OpenCode plugin for dotnet-episteme-skills.
+ * OpenCode plugin: registers the skills, the review subagents, `/dotnet-review`
+ * and the Synopsis MCP server. Install via `scripts/install-opencode.sh`.
  *
- * Registers, from this checkout, everything the Claude Code plugin registers
- * through `.claude-plugin/plugin.json` + `.mcp.json`:
- *   - the 10 `dotnet-techne-*` skills (as a skills path)
- *   - the five review subagents + the adversarial maintainer
- *   - the `/dotnet-review` orchestrator command
- *   - the Synopsis MCP server
- *
- * The reviewer prompts are read from `agents/review/*.md` at load time, so
- * those files stay the single source of truth for both tools. Their Claude
- * frontmatter is discarded here: `tools: Read, Grep, …` is a comma string
- * where OpenCode's schema wants a map, and OpenCode rejects the whole config
- * document over it. Never copy those files into an OpenCode agent directory.
- *
- * Install: symlink this file into `~/.config/opencode/plugin/` (see
- * `scripts/install-opencode.sh`) or install the published npm package.
+ * Reviewer prompts are read from `agents/review/*.md` so those files stay the
+ * single source across tools; their Claude frontmatter is dropped because a
+ * comma-string `tools:` key makes OpenCode reject the whole config document.
  */
 import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
@@ -27,10 +16,8 @@ const COMMAND_TEMPLATE = path.join(ROOT, "opencode", "dotnet-review.template.md"
 const MCP_LAUNCHER = path.join(ROOT, "bin", "synopsis-mcp-launcher.sh")
 
 /**
- * Mirrors `hooks/git-readonly-guard.sh`. OpenCode evaluates these last-match-wins
- * and parses chained commands, so `git status && rm -rf x` is denied by the `*`
- * rule. Patterns anchor on the subcommand, so `git -C /elsewhere diff` never
- * matches an allow — which is stricter than the Claude hook's `-C` path check.
+ * Reviewers get read-only git and nothing else. Patterns anchor on the
+ * subcommand so `git -C <elsewhere> diff` matches no allow rule.
  */
 const REVIEWER_PERMISSION = {
   edit: "deny",
@@ -72,10 +59,8 @@ async function loadReviewers() {
 }
 
 /**
- * A strong tier is optional because OpenCode's `task` tool has no per-call
- * model parameter: the only way to give a lane a stronger model is a second
- * agent that pins one. Set it via plugin options `{ strongModel }` or
- * `DOTNET_EPISTEME_STRONG_MODEL` (options only reach config-declared plugins).
+ * `task` takes no per-call model, so a stronger tier needs a second agent that
+ * pins one. Options only reach config-declared plugins, hence the env var too.
  */
 function strongModel(options) {
   const value = options?.strongModel ?? process.env.DOTNET_EPISTEME_STRONG_MODEL
@@ -106,8 +91,7 @@ export const DotnetEpisteme = async (_input, options) => {
 
   return {
     config: async (config) => {
-      // OpenCode 1.18.x hands the plugin the v1-shaped config and ignores v2
-      // containers written here. Warn instead of silently registering nothing.
+      // 1.18.x hands us the v1-shaped config; a v2 one would register nothing.
       if (!config.agent && (config.agents || config.commands || Array.isArray(config.skills))) {
         console.warn(
           "[dotnet-episteme] OpenCode passed a v2-shaped config; this plugin version writes v1 keys. Update the plugin.",
@@ -141,15 +125,14 @@ export const DotnetEpisteme = async (_input, options) => {
       config.command ??= {}
       config.command["dotnet-review"] ??= {
         description: template.description,
-        // Contributor notes in the template are for humans, not for the model.
+        // Template comments are for contributors, not the model.
         template: template.body
           .replace(/<!--[\s\S]*?-->\s*/g, "")
           .replaceAll("{{PLUGIN_ROOT}}", ROOT)
           .replaceAll("{{TIER_GUIDANCE}}", tierGuidance(strong)),
       }
 
-      // The launcher is a POSIX shell script: on native Windows there is no
-      // interpreter for it, so Synopsis stays CLI-only there (WSL2 reports linux).
+      // The launcher needs a POSIX shell, which native Windows lacks.
       if (process.platform !== "win32") {
         config.mcp ??= {}
         config.mcp["synopsis"] ??= { type: "local", command: [MCP_LAUNCHER], enabled: true }

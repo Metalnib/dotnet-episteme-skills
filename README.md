@@ -14,20 +14,19 @@ In a system with dozens or hundreds of microservices, where AI is generating imp
 
 ## Install
 
-There are four install paths. Three are plugins - **Claude Code**, **OpenCode**, and **Codex** - each giving you the skills, the multi-agent review pipeline, and Synopsis's MCP server. **Skills-only** is portable to any [Agent Skills](https://agentskills.io) tool: it ships the skills without the automation, and you can still register Synopsis's MCP server in your tool yourself.
+Pick your tool. Claude Code, OpenCode and Codex each get a plugin with the skills, the multi-agent review, and the Synopsis dependency graph. Any other tool that supports [Agent Skills](https://agentskills.io) can use the skills on their own.
 
-| What you get | Plugin (Claude Code) | Plugin (OpenCode) | Plugin (Codex) | Skills-only |
+| What you get | Claude Code | OpenCode | Codex | Skills only |
 |---|---|---|---|---|
-| The 10 `dotnet-techne-*` skills | ✓ | ✓ | ✓ | ✓ |
-| Multi-agent review: 5 parallel reviewers + adversarial maintainer | ✓ `/dotnet-review` | ✓ `/dotnet-review` | ✓ `dotnet-techne-review-pipeline` skill | single-context review skill instead |
-| Synopsis dependency-graph tools, auto-started + registered as an MCP server | ✓ | ✓ | ✓ | register `synopsis mcp` in your tool's MCP config yourself, or use the CLI |
-| Read-only reviewers | `PreToolUse` guard hook | per-agent `permission` rules | per-role `sandbox_mode` | n/a |
-| Per-reviewer model tier | ✓ per Task call | opt-in pinned `-strong` variants | per spawn / `default_subagent_model` | n/a |
-| Scripted orchestration (`workflows/dotnet-review.js`) | ✓ | model-driven fan-out instead | model-driven fan-out instead | n/a |
-| Experimental Synopsis log monitor | ✓ | not included | not included | not included |
-| Extra setup beyond installing | none | none | `scripts/install-codex.sh` for the roles | copy skills |
+| The 10 skills | ✓ | ✓ | ✓ | ✓ |
+| Review with 5 reviewers + a reviewer that challenges them | `/dotnet-review` | `/dotnet-review` | ask for it (a skill) | one-pass review skill instead |
+| Synopsis dependency graph, started for you | ✓ | ✓ | ✓ | start it yourself, or use the CLI |
+| Reviewers cannot change files | ✓ | ✓ | ✓ | — |
+| A stronger model for big changes | automatic | opt-in | opt-in | — |
+| Experimental log monitor | ✓ | — | — | — |
+| Extra step after installing | none | none | one script | copy the skills |
 
-Full per-tool breakdown: [docs/tool-compatibility.md](docs/tool-compatibility.md).
+Per-tool details: [docs/tool-compatibility.md](docs/tool-compatibility.md). Planned work: [docs/roadmap.md](docs/roadmap.md).
 
 ### Option 1: Plugin (Claude Code)
 
@@ -41,7 +40,7 @@ One command - skills activate automatically, and the review command, MCP server,
 
 ### Option 2: Plugin (OpenCode)
 
-OpenCode cannot consume Claude Code plugins, so it gets its own plugin. Clone and run the installer - it symlinks the plugin into `~/.config/opencode/plugin/` (so `git pull` is the update path), pre-warms the Synopsis binary, and verifies all four registrations through the OpenCode CLI:
+OpenCode cannot read Claude Code plugins, so it has its own. Clone and run the installer, which registers everything and checks it worked:
 
 ```bash
 git clone https://github.com/Metalnib/dotnet-episteme-skills.git
@@ -49,25 +48,25 @@ cd dotnet-episteme-skills
 scripts/install-opencode.sh
 ```
 
-Once `opencode-dotnet-episteme` is published to npm, `opencode plugin opencode-dotnet-episteme -g` becomes a one-command alternative that also accepts plugin options - see [docs/opencode-setup.md](docs/opencode-setup.md).
+You get the 10 skills, `/dotnet-review` with its six reviewers, and the Synopsis graph server. `git pull` updates all of it. More: [docs/opencode-setup.md](docs/opencode-setup.md).
 
-You get the 10 skills, six `review-*` subagents, `/dotnet-review`, and the Synopsis MCP server; `git pull` is the update path. Two things differ from Claude Code: there is no workflow runtime (the command drives parallel `task` calls itself), and OpenCode's `task` tool has no per-invocation model, so tiering is opt-in through pinned `review-*-strong` agents. Setup, verification commands, and the config traps to avoid: [docs/opencode-setup.md](docs/opencode-setup.md).
-
-> **Never** copy `agents/review/*.md` into OpenCode's agent directory - their `tools:` frontmatter fails OpenCode's schema and takes down config resolution for the whole session. The plugin converts them for you.
+> Don't copy `agents/review/*.md` into OpenCode's own agent folder - they are written for Claude Code and OpenCode rejects them in a way that breaks its config. The installer converts them for you.
 
 ### Option 3: Plugin (Codex)
 
-Codex reads this repo's plugin manifest directly - two commands, then one script for the review roles (a plugin cannot carry them; Codex takes roles from `config.toml`):
+Two commands install the plugin, then one script adds the reviewer roles (Codex only accepts those from its own config):
 
 ```bash
 codex plugin marketplace add Metalnib/dotnet-episteme-skills
 codex plugin add dotnet-episteme-skills@dotnet-episteme-marketplace
-scripts/install-codex.sh    # or: ~/.codex/plugins/cache/*/dotnet-episteme-skills/*/scripts/install-codex.sh
+scripts/install-codex.sh    # or from the installed copy under ~/.codex/plugins/cache/
 ```
 
-You get the 10 skills, the six `review-*` roles (each sandboxed read-only), the Synopsis MCP server, and the read-only git guard. Codex has no custom slash commands, so the orchestrator ships as the `dotnet-techne-review-pipeline` skill - just ask for a multi-agent review. Setup, verification, and the design rationale: [docs/codex-setup.md](docs/codex-setup.md).
+You get the 10 skills, six reviewers that cannot change files, and the Synopsis graph server. Codex has no custom commands, so you ask for a multi-agent review in your own words. More: [docs/codex-setup.md](docs/codex-setup.md).
 
-> On first run Codex asks to trust the plugin's hook - choose *Trust all and continue*.
+> On first start Codex asks to trust the plugin's hook - choose *Trust all and continue*.
+>
+> A full review uses six agents. On a free or metered plan, ask for a normal review of small changes instead.
 
 ### Option 4: Skills-only (portable)
 
