@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "synopsis": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "exec \"$(ls -dt \"$HOME\"/.codex/plugins/cache/*/dotnet-episteme-skills/*/bin/synopsis-mcp-launcher.sh | head -1)\""
+      ],
+      "startup_timeout_sec": 120
+    }
+  }
+}

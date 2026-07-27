@@ -316,6 +316,87 @@ if [ -d "$OPENCODE_DIR" ]; then
   fi
 fi
 
+# --- Codex plugin ---
+CODEX_MANIFEST="$REPO_ROOT/.codex-plugin/plugin.json"
+if [ -f "$CODEX_MANIFEST" ]; then
+  if ! python3 -m json.tool "$CODEX_MANIFEST" > /dev/null 2>&1; then
+    err ".codex-plugin/plugin.json is not valid JSON"
+  else
+    # Rules from the published plugin.json spec: kebab-case name, strict semver,
+    # and `hooks` is rejected outright (Codex discovers hooks/hooks.json itself).
+    if ! CODEX_MANIFEST="$CODEX_MANIFEST" PLUGIN_JSON="$PLUGIN_JSON" REPO_ROOT="$REPO_ROOT" python3 - <<'PY'
+import json
+import os
+import pathlib
+import re
+import sys
+
+repo = pathlib.Path(os.environ["REPO_ROOT"])
+manifest = json.loads(pathlib.Path(os.environ["CODEX_MANIFEST"]).read_text())
+claude = json.loads(pathlib.Path(os.environ["PLUGIN_JSON"]).read_text())
+errors = []
+
+for field in ("name", "version", "description", "author"):
+    if not manifest.get(field):
+        errors.append(f"missing required field: {field}")
+if not isinstance(manifest.get("author"), dict) or not manifest.get("author", {}).get("name"):
+    errors.append("author.name is required")
+if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", str(manifest.get("name", ""))):
+    errors.append(f"name must be kebab-case: {manifest.get('name')!r}")
+if not re.fullmatch(r"\d+\.\d+\.\d+([-+].*)?", str(manifest.get("version", ""))):
+    errors.append(f"version must be strict semver: {manifest.get('version')!r}")
+if "hooks" in manifest:
+    errors.append("'hooks' is rejected by Codex manifest validation - hooks/hooks.json is discovered automatically")
+if manifest.get("version") != claude.get("version"):
+    errors.append(f"version {manifest.get('version')} does not match plugin.json {claude.get('version')}")
+
+for url_field in ("websiteURL", "privacyPolicyURL", "termsOfServiceURL"):
+    url = (manifest.get("interface") or {}).get(url_field)
+    if url is not None and not str(url).startswith("https://"):
+        errors.append(f"interface.{url_field} must be an absolute https:// URL")
+
+mcp = manifest.get("mcpServers")
+if isinstance(mcp, str):
+    if not (repo / mcp.lstrip("./")).is_file():
+        errors.append(f"mcpServers path not found: {mcp}")
+elif mcp is not None and not isinstance(mcp, dict):
+    errors.append("mcpServers must be a path string or an object")
+
+roots = manifest.get("skills")
+for root in [roots] if isinstance(roots, str) else (roots or []):
+    if not (repo / str(root).lstrip("./")).is_dir():
+        errors.append(f"skills root not found: {root}")
+
+for problem in errors:
+    print(problem)
+sys.exit(1 if errors else 0)
+PY
+    then
+      err ".codex-plugin/plugin.json failed validation (see output above)"
+    else
+      ok ".codex-plugin/plugin.json is valid and version-aligned"
+    fi
+  fi
+
+  if [ ! -x "$REPO_ROOT/scripts/install-codex.sh" ]; then
+    err "scripts/install-codex.sh is missing or not executable"
+  fi
+
+  # The Codex-only orchestrator skill lives outside the shared skills root, so
+  # the loop above never sees it.
+  while IFS= read -r codex_skill; do
+    [ -z "$codex_skill" ] && continue
+    rel_path="${codex_skill#"$REPO_ROOT"/}"
+    frontmatter="$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$codex_skill")"
+    for field in name description; do
+      if ! printf '%s\n' "$frontmatter" | grep -q "^${field}:"; then
+        err "$rel_path missing frontmatter field: $field"
+      fi
+    done
+    ok "$rel_path frontmatter looks valid"
+  done <<< "$(find "$REPO_ROOT/codex" -type f -name 'SKILL.md' 2>/dev/null | sort)"
+fi
+
 # --- Monitors (experimental) ---
 MONITORS_JSON="$REPO_ROOT/monitors/monitors.json"
 if [ -f "$MONITORS_JSON" ]; then

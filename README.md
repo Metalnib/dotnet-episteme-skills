@@ -14,17 +14,18 @@ In a system with dozens or hundreds of microservices, where AI is generating imp
 
 ## Install
 
-There are three install paths. The **Claude Code plugin** gives you the full feature set. The **OpenCode plugin** gives you the review pipeline and Synopsis MCP on OpenCode. **Skills-only** is portable to any [Agent Skills](https://agentskills.io) tool: it ships the skills without the automation, and you can still register Synopsis's MCP server in your tool yourself.
+There are four install paths. Three are plugins - **Claude Code**, **OpenCode**, and **Codex** - each giving you the skills, the multi-agent review pipeline, and Synopsis's MCP server. **Skills-only** is portable to any [Agent Skills](https://agentskills.io) tool: it ships the skills without the automation, and you can still register Synopsis's MCP server in your tool yourself.
 
-| What you get | Plugin (Claude Code) | Plugin (OpenCode) | Skills-only (any Agent Skills tool) |
-|---|---|---|---|
-| The 10 `dotnet-techne-*` skills | ✓ | ✓ | ✓ |
-| `/dotnet-review` multi-agent command (parallel reviewers + adversarial maintainer) | ✓ | ✓ | single-context review skill instead |
-| Synopsis dependency-graph tools, auto-started + registered as an MCP server | ✓ | ✓ | register `synopsis mcp` in your tool's MCP config yourself, or use the CLI |
-| Per-reviewer model tier | ✓ per Task call | opt-in pinned `-strong` variants | n/a |
-| Scripted orchestration (`workflows/dotnet-review.js`) | ✓ | model-driven `task` fan-out instead | n/a |
-| Experimental Synopsis log monitor | ✓ | not included | not included |
-| Runs in | Claude Code | OpenCode | Claude Code (no plugin), OpenCode, Codex, pi |
+| What you get | Plugin (Claude Code) | Plugin (OpenCode) | Plugin (Codex) | Skills-only |
+|---|---|---|---|---|
+| The 10 `dotnet-techne-*` skills | ✓ | ✓ | ✓ | ✓ |
+| Multi-agent review: 5 parallel reviewers + adversarial maintainer | ✓ `/dotnet-review` | ✓ `/dotnet-review` | ✓ `dotnet-techne-review-pipeline` skill | single-context review skill instead |
+| Synopsis dependency-graph tools, auto-started + registered as an MCP server | ✓ | ✓ | ✓ | register `synopsis mcp` in your tool's MCP config yourself, or use the CLI |
+| Read-only reviewers | `PreToolUse` guard hook | per-agent `permission` rules | per-role `sandbox_mode` | n/a |
+| Per-reviewer model tier | ✓ per Task call | opt-in pinned `-strong` variants | per spawn / `default_subagent_model` | n/a |
+| Scripted orchestration (`workflows/dotnet-review.js`) | ✓ | model-driven fan-out instead | model-driven fan-out instead | n/a |
+| Experimental Synopsis log monitor | ✓ | not included | not included | not included |
+| Extra setup beyond installing | none | none | `scripts/install-codex.sh` for the roles | copy skills |
 
 Full per-tool breakdown: [docs/tool-compatibility.md](docs/tool-compatibility.md).
 
@@ -58,7 +59,21 @@ You get the 10 skills, six `review-*` subagents, `/dotnet-review`, and the Synop
 
 > **Never** copy `agents/review/*.md` into OpenCode's agent directory - their `tools:` frontmatter fails OpenCode's schema and takes down config resolution for the whole session. The plugin converts them for you.
 
-### Option 3: Skills-only (portable)
+### Option 3: Plugin (Codex)
+
+Codex reads this repo's plugin manifest directly - two commands, then one script for the review roles (a plugin cannot carry them; Codex takes roles from `config.toml`):
+
+```bash
+codex plugin marketplace add Metalnib/dotnet-episteme-skills
+codex plugin add dotnet-episteme-skills@dotnet-episteme-marketplace
+scripts/install-codex.sh    # or: ~/.codex/plugins/cache/*/dotnet-episteme-skills/*/scripts/install-codex.sh
+```
+
+You get the 10 skills, the six `review-*` roles (each sandboxed read-only), the Synopsis MCP server, and the read-only git guard. Codex has no custom slash commands, so the orchestrator ships as the `dotnet-techne-review-pipeline` skill - just ask for a multi-agent review. Setup, verification, and the design rationale: [docs/codex-setup.md](docs/codex-setup.md).
+
+> On first run Codex asks to trust the plugin's hook - choose *Trust all and continue*.
+
+### Option 4: Skills-only (portable)
 
 Download the latest archive from the [releases page](https://github.com/Metalnib/dotnet-episteme-skills/releases), extract, and copy `skills/` into your tool's skills directory:
 

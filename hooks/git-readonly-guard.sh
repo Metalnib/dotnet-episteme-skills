@@ -4,6 +4,15 @@
 set -euo pipefail
 
 INPUT="$(cat)"
+
+# Codex sends no agent_type on PreToolUse (only SubagentStart/Stop carry it), so
+# there is no reviewer to scope to: exit before paying for a python3 spawn on
+# every command. Reviewer read-only there comes from each role's sandbox_mode.
+case "$INPUT" in
+  *'"agent_type"'*) ;;
+  *) exit 0 ;;
+esac
+
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 python3 - "$INPUT" "$PLUGIN_ROOT" <<'PY'
 import json, os, re, sys

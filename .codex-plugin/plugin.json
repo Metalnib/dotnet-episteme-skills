@@ -1,0 +1,38 @@
+{
+  "name": "dotnet-episteme-skills",
+  "version": "1.6.0",
+  "description": "Production-tested .NET skills for code review, dependency analysis, API design, concurrency, and performance, plus the Synopsis dependency-graph MCP server.",
+  "author": {
+    "name": "Metalnib",
+    "url": "https://github.com/Metalnib"
+  },
+  "homepage": "https://github.com/Metalnib/dotnet-episteme-skills#readme",
+  "repository": "https://github.com/Metalnib/dotnet-episteme-skills",
+  "license": "MIT",
+  "keywords": [
+    "dotnet",
+    "csharp",
+    "code-review",
+    "architecture",
+    "performance",
+    "mcp"
+  ],
+  "skills": [
+    "./skills",
+    "./codex/skills"
+  ],
+  "mcpServers": "./codex/mcp.json",
+  "interface": {
+    "displayName": "DotNet Episteme Skills",
+    "shortDescription": "Production-tested .NET review and architecture skills.",
+    "longDescription": "Ten Agent Skills covering .NET code review, CRAP/coverage risk, cross-repo impact, C# API design, coding standards, concurrency patterns, type-design performance, NuGet package inspection, serialisation, and the Synopsis dependency graph. Ships the Synopsis MCP server for blast-radius and breaking-change analysis across .NET workspaces, plus a read-only git guard hook for review agents.",
+    "developerName": "Metalnib",
+    "category": "developer-tools",
+    "capabilities": [
+      "skills",
+      "mcp",
+      "hooks"
+    ],
+    "websiteURL": "https://github.com/Metalnib/dotnet-episteme-skills"
+  }
+}
