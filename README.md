@@ -41,19 +41,15 @@ One command - skills activate automatically, and the review command, MCP server,
 
 ### Option 2: Plugin (OpenCode)
 
-OpenCode cannot consume Claude Code plugins, so it gets its own plugin - one command:
-
-```text
-opencode plugin opencode-dotnet-episteme -g
-```
-
-Or from a clone, which makes `git pull` the update path (best for contributors). The installer symlinks the plugin into `~/.config/opencode/plugin/`, pre-warms the Synopsis binary, and verifies all four registrations through the OpenCode CLI:
+OpenCode cannot consume Claude Code plugins, so it gets its own plugin. Clone and run the installer - it symlinks the plugin into `~/.config/opencode/plugin/` (so `git pull` is the update path), pre-warms the Synopsis binary, and verifies all four registrations through the OpenCode CLI:
 
 ```bash
 git clone https://github.com/Metalnib/dotnet-episteme-skills.git
 cd dotnet-episteme-skills
 scripts/install-opencode.sh
 ```
+
+Once `opencode-dotnet-episteme` is published to npm, `opencode plugin opencode-dotnet-episteme -g` becomes a one-command alternative that also accepts plugin options - see [docs/opencode-setup.md](docs/opencode-setup.md).
 
 You get the 10 skills, six `review-*` subagents, `/dotnet-review`, and the Synopsis MCP server; `git pull` is the update path. Two things differ from Claude Code: there is no workflow runtime (the command drives parallel `task` calls itself), and OpenCode's `task` tool has no per-invocation model, so tiering is opt-in through pinned `review-*-strong` agents. Setup, verification commands, and the config traps to avoid: [docs/opencode-setup.md](docs/opencode-setup.md).
 
@@ -79,7 +75,7 @@ Download the latest archive from the [releases page](https://github.com/Metalnib
 
 ```bash
 # Linux / macOS
-tar -xzf dotnet-episteme-skills-1.6.0.tar.gz
+tar -xzf dotnet-episteme-skills-1.7.0.tar.gz
 cp -R skills/* ~/.claude/skills/          # Claude Code (skills only, no plugin extras)
 cp -R skills/* ~/.config/opencode/skill/  # OpenCode
 cp -R skills/* ~/.agents/skills/          # OpenAI Codex
@@ -88,7 +84,7 @@ cp -R skills/* ~/.agents/skills/          # OpenAI Codex
 
 ```powershell
 # Windows
-Expand-Archive dotnet-episteme-skills-1.6.0.zip .
+Expand-Archive dotnet-episteme-skills-1.7.0.zip .
 Copy-Item -Recurse skills\* "$env:USERPROFILE\.claude\skills\"
 ```
 
@@ -316,15 +312,22 @@ Version is defined once in `src/synopsis/Directory.Build.props` and flows into t
 
 ### Releasing
 
-1. Update `CHANGELOG.md`.
-2. Bump `<Version>` in `src/synopsis/Directory.Build.props`.
-3. Sync `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` to the same version.
-4. Validate locally: `bash scripts/validate.sh && bash scripts/validate-marketplace.sh`
-5. Tag and push - CI builds all 6 binaries, runs the test suite, and publishes the GitHub release:
+1. Update `CHANGELOG.md` - the new section header must be `## [<version>] — <date>`. The release workflow extracts notes by matching that exact header, so a header like `## [Unreleased]` ships a release with empty notes.
+2. Sync all four version fields: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`, `package.json`. `scripts/validate.sh` fails on drift between the last three, `scripts/validate-marketplace.sh` on the marketplace, and CI checks the tag against `plugin.json` and `package.json`.
+3. Bump `<Version>` in `src/synopsis/Directory.Build.props` **only when Synopsis itself changed** - the skills advertise `Requires Synopsis v1.6.0+`, and nothing forces the binary to track the plugin version.
+4. Validate locally:
    ```bash
-   git tag v1.6.0
-   git push origin main v1.6.0
+   bash scripts/validate.sh && bash scripts/validate-marketplace.sh
+   bash scripts/test-guard.sh && node scripts/test-opencode-plugin.mjs
    ```
+5. Tag and push - CI builds all 6 binaries, runs the test suite, publishes the GitHub release, then publishes the npm package:
+   ```bash
+   git tag v1.7.0
+   git push origin main v1.7.0
+   ```
+6. After the release, verify the remote install paths once: `/plugin marketplace add Metalnib/dotnet-episteme-skills` (Claude Code), `codex plugin marketplace add Metalnib/dotnet-episteme-skills` (Codex), and `opencode plugin opencode-dotnet-episteme -g` (OpenCode, once npm publishing is enabled).
+
+**npm publishing** is optional and off until the `NPM_TOKEN` repository secret exists; the `publish-npm` job skips cleanly without it, so releases never go red. To enable it: create an npm account, generate an **Automation** access token, and add it as `NPM_TOKEN` under Settings → Secrets and variables → Actions. Publishing then happens in CI on every `v*` tag - no local Node tooling required.
 
 ---
 

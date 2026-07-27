@@ -125,7 +125,7 @@ jobs:
       - name: Build skills archive
         run: |
           VERSION="$(jq -r '.version' .claude-plugin/plugin.json)"
-          SKILL_COUNT="$(jq '.skills | length' .claude-plugin/plugin.json)"
+          SKILL_COUNT="$(find skills -name SKILL.md | wc -l | tr -d ' ')"
           tar -czf "dotnet-episteme-skills-${VERSION}.tar.gz" .claude-plugin .codex-plugin .mcp.json agents bin codex commands docs hooks monitors opencode package.json skills scripts workflows README.md
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "SKILL_COUNT=$SKILL_COUNT" >> "$GITHUB_ENV"

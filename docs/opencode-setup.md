@@ -8,6 +8,8 @@ Verified against OpenCode **1.18.7** on macOS.
 
 ### From npm (one command)
 
+> Available once `opencode-dotnet-episteme` is published; until then use the clone install below. Publishing is enabled by adding an `NPM_TOKEN` repository secret — see *Releasing* in the README.
+
 ```bash
 opencode plugin opencode-dotnet-episteme -g
 ```

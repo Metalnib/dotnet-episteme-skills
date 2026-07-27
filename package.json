@@ -1,6 +1,6 @@
 {
   "name": "opencode-dotnet-episteme",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "OpenCode plugin for DotNet Episteme Skills: 10 .NET review/architecture skills, a five-reviewer + adversarial-maintainer review pipeline, and the Synopsis dependency-graph MCP server.",
   "keywords": [
     "opencode",
@@ -31,6 +31,7 @@
     "bin/",
     "docs/opencode-setup.md",
     "docs/tool-compatibility.md",
+    "LICENSE",
     "README.md",
     "CHANGELOG.md"
   ],

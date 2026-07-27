@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.7.0] — 2026-07-27
 
 ### OpenCode plugin (new)
 - **`opencode/dotnet-episteme.js`** — a native OpenCode plugin whose `config` hook registers what the Claude Code plugin registers: the skills path, the five reviewers plus the adversarial maintainer as `review-*` subagents, the `/dotnet-review` command, and the Synopsis MCP server. Reviewer prompts are read from `agents/review/*.md` at load time, so those files stay the single source of truth; their Claude frontmatter is discarded, because a comma-string `tools:` key fails OpenCode's schema and takes down config resolution for the whole session.
@@ -27,9 +27,9 @@
 - **`scripts/validate.sh` workflow check** — `node --check` rejected `workflows/dotnet-review.js` because workflow scripts execute as an async function body, where top-level `return`/`await` are legal; the check now parses them the way the runtime does. This failure made validation red on `main`.
 
 ### Docs
-- **`docs/tool-compatibility.md`** — recorded that Codex installs this repo as a plugin with no Codex-specific files (verified on codex-cli 0.145.0: marketplace add, plugin add, 10 skills in the model prompt, `.mcp.json` read), plus the two gaps blocking the review pipeline there (`${CLAUDE_PLUGIN_ROOT}` unexpanded in MCP commands; `PreToolUse` carries no `agent_type`, so the read-only guard cannot scope itself to reviewers).
-- **`docs/tool-compatibility.md`** — corrected two false OpenCode rows (multi-subagent review and maintainer pushback are supported there, not "single-context only"), added rows for the reviewer sandbox and per-reviewer model tier, and recorded the contributor rule that `agents/review/*.md` stay Claude-shaped with the plugin converting them.
-- **`README.md`** — OpenCode install path; the skills count in the install table said 9, not 10.
+- **`docs/tool-compatibility.md`** — corrected two false OpenCode rows (multi-subagent review and maintainer pushback are supported there, not "single-context only"), rewrote the Codex notes around what was measured on codex-cli 0.145.0, and added rows for the reviewer sandbox and per-reviewer model tier. Contributors: tool-specific behaviour belongs in `opencode/`, `.codex-plugin/`, `codex/` — `agents/review/*.md` stay Claude-shaped and both other tools convert them.
+- **`docs/codex-setup.md`, `docs/opencode-setup.md`** — install, verification commands, and the per-tool traps worth knowing before hand-editing config.
+- **`README.md`** — three plugin install paths; the skills count in the install table said 9, not 10.
 
 ## [1.6.0] — 2026-07-24
 
