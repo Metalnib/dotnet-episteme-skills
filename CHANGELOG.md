@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### OpenCode plugin (new)
+- **`opencode/dotnet-episteme.js`** — a native OpenCode plugin whose `config` hook registers what the Claude Code plugin registers: the skills path, the five reviewers plus the adversarial maintainer as `review-*` subagents, the `/dotnet-review` command, and the Synopsis MCP server. Reviewer prompts are read from `agents/review/*.md` at load time, so those files stay the single source of truth; their Claude frontmatter is discarded, because a comma-string `tools:` key fails OpenCode's schema and takes down config resolution for the whole session.
+- **Read-only reviewer sandbox** — registered as per-agent `permission` rules (`edit`/`webfetch` denied, bash restricted to `git diff|log|show|blame|status|rev-parse|merge-base`), replacing `hooks/git-readonly-guard.sh` on OpenCode. Stricter in one respect: the allow patterns anchor on the subcommand, so `git -C <other repo> diff` matches no allow rule, and OpenCode parses chained commands, so `git status && rm -rf x` is denied.
+- **`opencode/dotnet-review.template.md`** — the orchestrator adapted to OpenCode: no `Workflow` step (no workflow runtime exists), `{{PLUGIN_ROOT}}` resolved at load time (OpenCode does not expand variables in command templates), flat `review-*` subagent names, and tier guidance that matches the runtime.
+- **Optional model tiering** — OpenCode's `task` tool has no per-invocation `model`, so `DOTNET_EPISTEME_STRONG_MODEL` (or plugin option `strongModel`) registers a pinned `review-<lane>-strong` variant of every lane and the command is told to dispatch those when the sizing table calls for a stronger tier.
+- **`scripts/install-opencode.sh` / `.ps1`** — symlink install (so `git pull` is the update path), a warning when a hand-copied Claude agent file is found in OpenCode's agent directory, Synopsis binary pre-warm (a fresh clone has no `bin/`, and OpenCode's MCP startup window is too short to download one), and CLI verification of all four registrations. `--verify` / `--uninstall` supported.
+- **`docs/opencode-setup.md`** — install, verification, the optional strong tier, the v1/v2 config-shape traps (one v2-shaped key in a v1 document silently discards the whole file), and troubleshooting.
+
+### Fixes
+- **`scripts/validate.sh` workflow check** — `node --check` rejected `workflows/dotnet-review.js` because workflow scripts execute as an async function body, where top-level `return`/`await` are legal; the check now parses them the way the runtime does. This failure made validation red on `main`.
+
+### Docs
+- **`docs/tool-compatibility.md`** — corrected two false OpenCode rows (multi-subagent review and maintainer pushback are supported there, not "single-context only"), added rows for the reviewer sandbox and per-reviewer model tier, and recorded the contributor rule that `agents/review/*.md` stay Claude-shaped with the plugin converting them.
+- **`README.md`** — OpenCode install path; the skills count in the install table said 9, not 10.
+
 ## [1.6.0] — 2026-07-24
 
 ### Claude Code plugin

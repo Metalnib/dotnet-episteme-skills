@@ -14,15 +14,17 @@ In a system with dozens or hundreds of microservices, where AI is generating imp
 
 ## Install
 
-There are two install paths. The **plugin** (Claude Code only) gives you the full feature set. **Skills-only** is portable to any [Agent Skills](https://agentskills.io) tool. It ships the skills without the plugin automation - the `/dotnet-review` command, Synopsis MCP auto-start, and the monitor. You can still register Synopsis's MCP server in your tool yourself; the plugin just does it for you.
+There are three install paths. The **Claude Code plugin** gives you the full feature set. The **OpenCode plugin** gives you the review pipeline and Synopsis MCP on OpenCode. **Skills-only** is portable to any [Agent Skills](https://agentskills.io) tool: it ships the skills without the automation, and you can still register Synopsis's MCP server in your tool yourself.
 
-| What you get | Plugin (Claude Code) | Skills-only (any Agent Skills tool) |
-|---|---|---|
-| The 9 `dotnet-techne-*` skills | ✓ | ✓ |
-| `/dotnet-review` multi-agent command (parallel reviewers + adversarial maintainer) | ✓ | single-context review skill instead |
-| Synopsis dependency-graph tools, auto-started + registered as an MCP server | ✓ | register `synopsis mcp` in your tool's MCP config yourself, or use the CLI |
-| Experimental Synopsis log monitor | ✓ | not included |
-| Runs in | Claude Code | Claude Code (no plugin), OpenCode, Codex, pi |
+| What you get | Plugin (Claude Code) | Plugin (OpenCode) | Skills-only (any Agent Skills tool) |
+|---|---|---|---|
+| The 10 `dotnet-techne-*` skills | ✓ | ✓ | ✓ |
+| `/dotnet-review` multi-agent command (parallel reviewers + adversarial maintainer) | ✓ | ✓ | single-context review skill instead |
+| Synopsis dependency-graph tools, auto-started + registered as an MCP server | ✓ | ✓ | register `synopsis mcp` in your tool's MCP config yourself, or use the CLI |
+| Per-reviewer model tier | ✓ per Task call | opt-in pinned `-strong` variants | n/a |
+| Scripted orchestration (`workflows/dotnet-review.js`) | ✓ | model-driven `task` fan-out instead | n/a |
+| Experimental Synopsis log monitor | ✓ | not included | not included |
+| Runs in | Claude Code | OpenCode | Claude Code (no plugin), OpenCode, Codex, pi |
 
 Full per-tool breakdown: [docs/tool-compatibility.md](docs/tool-compatibility.md).
 
@@ -36,7 +38,21 @@ One command - skills activate automatically, and the review command, MCP server,
 
 > **Windows:** the Synopsis MCP auto-start and log monitor launch through a POSIX shell script, so run Claude Code under **WSL2** to get them (Synopsis then runs as a normal Linux binary). The review command, agents, and skills work on native Windows regardless; native Windows can also drive Synopsis through the CLI via `skills/dotnet-techne-synopsis/scripts/detect-tool.ps1`.
 
-### Option 2: Skills-only (portable)
+### Option 2: Plugin (OpenCode)
+
+OpenCode cannot consume Claude Code plugins, so clone and run the installer - it symlinks this repo's OpenCode plugin into `~/.config/opencode/plugin/` and verifies the result through the OpenCode CLI:
+
+```bash
+git clone https://github.com/Metalnib/dotnet-episteme-skills.git
+cd dotnet-episteme-skills
+scripts/install-opencode.sh
+```
+
+You get the 10 skills, six `review-*` subagents, `/dotnet-review`, and the Synopsis MCP server; `git pull` is the update path. Two things differ from Claude Code: there is no workflow runtime (the command drives parallel `task` calls itself), and OpenCode's `task` tool has no per-invocation model, so tiering is opt-in through pinned `review-*-strong` agents. Setup, verification commands, and the config traps to avoid: [docs/opencode-setup.md](docs/opencode-setup.md).
+
+> **Never** copy `agents/review/*.md` into OpenCode's agent directory - their `tools:` frontmatter fails OpenCode's schema and takes down config resolution for the whole session. The plugin converts them for you.
+
+### Option 3: Skills-only (portable)
 
 Download the latest archive from the [releases page](https://github.com/Metalnib/dotnet-episteme-skills/releases), extract, and copy `skills/` into your tool's skills directory:
 

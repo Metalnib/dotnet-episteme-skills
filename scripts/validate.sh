@@ -224,17 +224,73 @@ if [ -d "$WORKFLOWS_DIR" ]; then
       continue
     fi
     if command -v node >/dev/null 2>&1; then
-      if ! node --check "$wf_file" >/dev/null 2>&1; then
-        err "$rel_path fails node --check"
+      # Workflow scripts run as an async function body, where top-level return
+      # and await are legal, so `node --check` rejects valid scripts. Parse them
+      # the way the runtime does: strip the meta export, wrap, construct (never call).
+      if ! node -e '
+const fs = require("fs");
+const src = fs.readFileSync(process.argv[1], "utf8").replace(/^export\s+const\s+meta/m, "const meta");
+new Function("return (async () => {" + src + "\n})");
+' "$wf_file" >/dev/null 2>&1; then
+        err "$rel_path fails to parse as a workflow script body"
         continue
       fi
-      ok "$rel_path parses (node --check)"
+      ok "$rel_path parses as a workflow script body"
     else
       echo "WARN: node not found; $rel_path checked for meta block only" >&2
     fi
   done <<< "$(find "$WORKFLOWS_DIR" -type f -name '*.js' | sort)"
   if [ ! -x "$REPO_ROOT/scripts/install-workflow.sh" ]; then
     err "scripts/install-workflow.sh is missing or not executable"
+  fi
+fi
+
+# --- OpenCode plugin ---
+OPENCODE_DIR="$REPO_ROOT/opencode"
+if [ -d "$OPENCODE_DIR" ]; then
+  OPENCODE_PLUGIN="$OPENCODE_DIR/dotnet-episteme.js"
+  OPENCODE_TEMPLATE="$OPENCODE_DIR/dotnet-review.template.md"
+
+  if [ ! -f "$OPENCODE_PLUGIN" ]; then
+    err "opencode/ exists but opencode/dotnet-episteme.js is missing"
+  elif command -v node >/dev/null 2>&1; then
+    if bash -c "cd '$REPO_ROOT' && node scripts/test-opencode-plugin.mjs" > /dev/null 2>&1; then
+      ok "OpenCode plugin registers skills, agents, command, and MCP (scripts/test-opencode-plugin.mjs)"
+    else
+      err "OpenCode plugin registration test failed - run node scripts/test-opencode-plugin.mjs for details"
+    fi
+  else
+    echo "WARN: node not found; OpenCode plugin registration not tested" >&2
+  fi
+
+  if [ ! -f "$OPENCODE_TEMPLATE" ]; then
+    err "opencode/dotnet-review.template.md is missing"
+  else
+    for placeholder in '{{PLUGIN_ROOT}}' '{{TIER_GUIDANCE}}'; do
+      if ! grep -qF "$placeholder" "$OPENCODE_TEMPLATE"; then
+        err "opencode/dotnet-review.template.md no longer contains $placeholder - the plugin substitutes it"
+      fi
+    done
+    frontmatter="$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$OPENCODE_TEMPLATE")"
+    if ! printf '%s\n' "$frontmatter" | grep -q '^description:'; then
+      err "opencode/dotnet-review.template.md missing frontmatter field: description"
+    else
+      ok "opencode/dotnet-review.template.md placeholders and frontmatter look valid"
+    fi
+  fi
+
+  for installer in "$REPO_ROOT/scripts/install-opencode.sh"; do
+    if [ ! -x "$installer" ]; then
+      err "${installer#"$REPO_ROOT"/} is missing or not executable"
+    fi
+  done
+
+  # A comma-string `tools:` key fails OpenCode's config decode and takes the
+  # whole document with it, so it must never appear in OpenCode-consumed files.
+  if grep -rlE '^tools: *[A-Za-z]+,' "$OPENCODE_DIR" 2>/dev/null | grep -q .; then
+    err "opencode/ contains a comma-string 'tools:' key - invalid in OpenCode's agent schema"
+  else
+    ok "opencode/ carries no Claude-only 'tools:' frontmatter"
   fi
 fi
 
