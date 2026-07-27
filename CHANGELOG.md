@@ -22,6 +22,7 @@
 - MIT `LICENSE`.
 
 ### Fixes
+- Reviewer restrictions are now enforced on every lane, not just documented: `agents/review/data-messaging.md` denies `Task`, `WebFetch` and `WebSearch` alongside writes (it deny-lists rather than allow-lists so the Synopsis MCP tools stay visible), so no reviewer can reach the network or spawn a nested agent. `scripts/validate.sh` checks each lane, whichever style it uses.
 - `scripts/validate.sh`: workflow scripts are parsed as an async function body, so `node --check` no longer rejects `workflows/dotnet-review.js`. New checks cover the Codex manifest and version drift across `plugin.json`, `.codex-plugin/plugin.json` and `package.json`.
 - Release notes counted skill roots, so they reported 1 skill instead of 10.
 

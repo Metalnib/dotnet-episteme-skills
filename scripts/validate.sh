@@ -152,6 +152,30 @@ if [ -d "$AGENTS_DIR" ]; then
         err "$rel_path uses '$field' — ignored in plugin agents; move the agent to .claude/agents/ if it needs this"
       fi
     done
+
+    # R1/R5/R6 of docs/reviewer-restrictions.md. A lane may allow-list (`tools:`)
+    # or deny-list (`disallowedTools:`, needed to keep MCP tools visible), but
+    # writes, nested agents and network stay off either way.
+    case "$rel_path" in
+      agents/review/*)
+        if printf '%s\n' "$frontmatter" | grep -q '^tools:'; then
+          for forbidden in Write Edit Task WebFetch WebSearch; do
+            if printf '%s\n' "$frontmatter" | grep '^tools:' | grep -qw "$forbidden"; then
+              err "$rel_path allows '$forbidden' — reviewers must not write, spawn agents, or reach the network"
+            fi
+          done
+        elif printf '%s\n' "$frontmatter" | grep -q '^disallowedTools:'; then
+          for required in Write Edit Task WebFetch WebSearch; do
+            if ! printf '%s\n' "$frontmatter" | grep '^disallowedTools:' | grep -qw "$required"; then
+              err "$rel_path uses disallowedTools but does not deny '$required'"
+            fi
+          done
+        else
+          err "$rel_path has neither 'tools:' nor 'disallowedTools:' — reviewer restrictions unenforced"
+        fi
+        ;;
+    esac
+
     ok "$rel_path agent frontmatter looks valid"
   done <<< "$agent_files"
 fi
