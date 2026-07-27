@@ -299,11 +299,9 @@ if [ -d "$OPENCODE_DIR" ]; then
     fi
   fi
 
-  for installer in "$REPO_ROOT/scripts/install-opencode.sh"; do
-    if [ ! -x "$installer" ]; then
-      err "${installer#"$REPO_ROOT"/} is missing or not executable"
-    fi
-  done
+  if [ ! -x "$REPO_ROOT/scripts/install-opencode.sh" ]; then
+    err "scripts/install-opencode.sh is missing or not executable"
+  fi
 
   # A comma-string `tools:` key makes OpenCode reject the whole document.
   if grep -rlE '^tools: *[A-Za-z]+,' "$OPENCODE_DIR" 2>/dev/null | grep -q .; then

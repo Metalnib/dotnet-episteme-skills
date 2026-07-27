@@ -133,4 +133,4 @@ sys.exit(1 if failures else 0)
 PY
 
 echo
-echo 'Done. Try /dotnet-review in OpenCode, and `opencode mcp list` to confirm Synopsis connects.'
+echo 'Done. Try /dotnet-review in OpenCode, and "opencode mcp list" to confirm Synopsis connects.'

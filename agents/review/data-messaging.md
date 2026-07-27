@@ -1,7 +1,7 @@
 ---
 name: data-messaging
 description: Focused .NET code reviewer for EF Core/PostgreSQL data access, RabbitMQ messaging, and HTTP integration (endpoints, adapters, consumers). Worker agent launched by the dotnet-review command with an explicit scope and checklist path; not intended for standalone auto-delegation.
-disallowedTools: Write, Edit, NotebookEdit
+disallowedTools: Write, Edit, NotebookEdit, Task, WebFetch, WebSearch
 ---
 
 # Data access, messaging, and integration reviewer
