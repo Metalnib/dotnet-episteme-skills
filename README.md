@@ -14,17 +14,19 @@ In a system with dozens or hundreds of microservices, where AI is generating imp
 
 ## Install
 
-There are two install paths. The **plugin** (Claude Code only) gives you the full feature set. **Skills-only** is portable to any [Agent Skills](https://agentskills.io) tool. It ships the skills without the plugin automation - the `/dotnet-review` command, Synopsis MCP auto-start, and the monitor. You can still register Synopsis's MCP server in your tool yourself; the plugin just does it for you.
+Pick your tool. Claude Code, OpenCode and Codex each get a plugin with the skills, the multi-agent review, and the Synopsis dependency graph. Any other tool that supports [Agent Skills](https://agentskills.io) can use the skills on their own.
 
-| What you get | Plugin (Claude Code) | Skills-only (any Agent Skills tool) |
-|---|---|---|
-| The 9 `dotnet-techne-*` skills | ✓ | ✓ |
-| `/dotnet-review` multi-agent command (parallel reviewers + adversarial maintainer) | ✓ | single-context review skill instead |
-| Synopsis dependency-graph tools, auto-started + registered as an MCP server | ✓ | register `synopsis mcp` in your tool's MCP config yourself, or use the CLI |
-| Experimental Synopsis log monitor | ✓ | not included |
-| Runs in | Claude Code | Claude Code (no plugin), OpenCode, Codex, pi |
+| What you get | Claude Code | OpenCode | Codex | Skills only |
+|---|---|---|---|---|
+| The 10 skills | ✓ | ✓ | ✓ | ✓ |
+| Review with 5 reviewers + a reviewer that challenges them | `/dotnet-review` | `/dotnet-review` | ask for it (a skill) | one-pass review skill instead |
+| Synopsis dependency graph, started for you | ✓ | ✓ | ✓ | start it yourself, or use the CLI |
+| Reviewers cannot change files | ✓ | ✓ | ✓ | — |
+| A stronger model for big changes | automatic | opt-in | opt-in | — |
+| Experimental log monitor | ✓ | — | — | — |
+| Extra step after installing | none | none | one script | copy the skills |
 
-Full per-tool breakdown: [docs/tool-compatibility.md](docs/tool-compatibility.md).
+Per-tool details: [docs/tool-compatibility.md](docs/tool-compatibility.md). Planned work: [docs/roadmap.md](docs/roadmap.md).
 
 ### Option 1: Plugin (Claude Code)
 
@@ -36,13 +38,43 @@ One command - skills activate automatically, and the review command, MCP server,
 
 > **Windows:** the Synopsis MCP auto-start and log monitor launch through a POSIX shell script, so run Claude Code under **WSL2** to get them (Synopsis then runs as a normal Linux binary). The review command, agents, and skills work on native Windows regardless; native Windows can also drive Synopsis through the CLI via `skills/dotnet-techne-synopsis/scripts/detect-tool.ps1`.
 
-### Option 2: Skills-only (portable)
+### Option 2: Plugin (OpenCode)
+
+OpenCode cannot read Claude Code plugins, so it has its own. Clone and run the installer, which registers everything and checks it worked:
+
+```bash
+git clone https://github.com/Metalnib/dotnet-episteme-skills.git
+cd dotnet-episteme-skills
+scripts/install-opencode.sh
+```
+
+You get the 10 skills, `/dotnet-review` with its six reviewers, and the Synopsis graph server. `git pull` updates all of it. More: [docs/opencode-setup.md](docs/opencode-setup.md).
+
+> Don't copy `agents/review/*.md` into OpenCode's own agent folder - they are written for Claude Code and OpenCode rejects them in a way that breaks its config. The installer converts them for you.
+
+### Option 3: Plugin (Codex)
+
+Two commands install the plugin, then one script adds the reviewer roles (Codex only accepts those from its own config):
+
+```bash
+codex plugin marketplace add Metalnib/dotnet-episteme-skills
+codex plugin add dotnet-episteme-skills@dotnet-episteme-marketplace
+scripts/install-codex.sh    # or from the installed copy under ~/.codex/plugins/cache/
+```
+
+You get the 10 skills, six reviewers that cannot change files, and the Synopsis graph server. The review ships as a skill (Codex is deprecating custom slash prompts in favour of skills), so you ask for a multi-agent review in your own words. More: [docs/codex-setup.md](docs/codex-setup.md).
+
+> On first start Codex asks to trust the plugin's hook - choose *Trust all and continue*.
+>
+> A full review uses six agents. On a free or metered plan, ask for a normal review of small changes instead.
+
+### Option 4: Skills-only (portable)
 
 Download the latest archive from the [releases page](https://github.com/Metalnib/dotnet-episteme-skills/releases), extract, and copy `skills/` into your tool's skills directory:
 
 ```bash
 # Linux / macOS
-tar -xzf dotnet-episteme-skills-1.6.0.tar.gz
+tar -xzf dotnet-episteme-skills-1.7.0.tar.gz
 cp -R skills/* ~/.claude/skills/          # Claude Code (skills only, no plugin extras)
 cp -R skills/* ~/.config/opencode/skill/  # OpenCode
 cp -R skills/* ~/.agents/skills/          # OpenAI Codex
@@ -51,7 +83,7 @@ cp -R skills/* ~/.agents/skills/          # OpenAI Codex
 
 ```powershell
 # Windows
-Expand-Archive dotnet-episteme-skills-1.6.0.zip .
+Expand-Archive dotnet-episteme-skills-1.7.0.zip .
 Copy-Item -Recurse skills\* "$env:USERPROFILE\.claude\skills\"
 ```
 
@@ -279,15 +311,22 @@ Version is defined once in `src/synopsis/Directory.Build.props` and flows into t
 
 ### Releasing
 
-1. Update `CHANGELOG.md`.
-2. Bump `<Version>` in `src/synopsis/Directory.Build.props`.
-3. Sync `.claude-plugin/plugin.json` and `.claude-plugin/marketplace.json` to the same version.
-4. Validate locally: `bash scripts/validate.sh && bash scripts/validate-marketplace.sh`
+1. Update `CHANGELOG.md` - the new section header must be `## [<version>] — <date>`. The release workflow extracts notes by matching that exact header, so a header like `## [Unreleased]` ships a release with empty notes.
+2. Sync all four version fields: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, `.codex-plugin/plugin.json`, `package.json`. `scripts/validate.sh` fails on drift between the last three, `scripts/validate-marketplace.sh` on the marketplace, and CI checks the tag against `plugin.json` and `package.json`.
+3. Bump `<Version>` in `src/synopsis/Directory.Build.props` **only when Synopsis itself changed** - the skills advertise `Requires Synopsis v1.6.0+`, and nothing forces the binary to track the plugin version.
+4. Validate locally:
+   ```bash
+   bash scripts/validate.sh && bash scripts/validate-marketplace.sh
+   bash scripts/test-guard.sh && node scripts/test-opencode-plugin.mjs
+   ```
 5. Tag and push - CI builds all 6 binaries, runs the test suite, and publishes the GitHub release:
    ```bash
-   git tag v1.6.0
-   git push origin main v1.6.0
+   git tag v1.7.0
+   git push origin main v1.7.0
    ```
+6. After the release, check the install paths once: `/plugin marketplace add Metalnib/dotnet-episteme-skills` (Claude Code), `codex plugin marketplace add Metalnib/dotnet-episteme-skills` (Codex), and `scripts/install-opencode.sh` from a fresh clone (OpenCode).
+
+npm publishing is deferred to 2.0 ([roadmap](docs/roadmap.md)). The `publish-npm` job stays dormant until an `NPM_TOKEN` repository secret exists, so releases are unaffected.
 
 ---
 

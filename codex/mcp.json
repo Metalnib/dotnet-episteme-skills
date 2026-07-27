@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "synopsis": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "best=\"\"; for f in \"${CODEX_HOME:-$HOME/.codex}\"/plugins/cache/*/dotnet-episteme-skills/*/bin/synopsis-mcp-launcher.sh; do if [ -x \"$f\" ] && { [ -z \"$best\" ] || [ \"$f\" -nt \"$best\" ]; }; then best=\"$f\"; fi; done; if [ -z \"$best\" ]; then echo \"dotnet-episteme-skills: synopsis MCP launcher not found under ~/.codex/plugins/cache - reinstall: codex plugin add dotnet-episteme-skills@dotnet-episteme-marketplace\" >&2; exit 1; fi; exec \"$best\""
+      ],
+      "startup_timeout_sec": 120
+    }
+  }
+}

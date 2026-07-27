@@ -152,6 +152,30 @@ if [ -d "$AGENTS_DIR" ]; then
         err "$rel_path uses '$field' — ignored in plugin agents; move the agent to .claude/agents/ if it needs this"
       fi
     done
+
+    # R1/R5/R6 of docs/reviewer-restrictions.md. A lane may allow-list (`tools:`)
+    # or deny-list (`disallowedTools:`, needed to keep MCP tools visible), but
+    # writes, nested agents and network stay off either way.
+    case "$rel_path" in
+      agents/review/*)
+        if printf '%s\n' "$frontmatter" | grep -q '^tools:'; then
+          for forbidden in Write Edit Task WebFetch WebSearch; do
+            if printf '%s\n' "$frontmatter" | grep '^tools:' | grep -qw "$forbidden"; then
+              err "$rel_path allows '$forbidden' — reviewers must not write, spawn agents, or reach the network"
+            fi
+          done
+        elif printf '%s\n' "$frontmatter" | grep -q '^disallowedTools:'; then
+          for required in Write Edit Task WebFetch WebSearch; do
+            if ! printf '%s\n' "$frontmatter" | grep '^disallowedTools:' | grep -qw "$required"; then
+              err "$rel_path uses disallowedTools but does not deny '$required'"
+            fi
+          done
+        else
+          err "$rel_path has neither 'tools:' nor 'disallowedTools:' — reviewer restrictions unenforced"
+        fi
+        ;;
+    esac
+
     ok "$rel_path agent frontmatter looks valid"
   done <<< "$agent_files"
 fi
@@ -224,11 +248,17 @@ if [ -d "$WORKFLOWS_DIR" ]; then
       continue
     fi
     if command -v node >/dev/null 2>&1; then
-      if ! node --check "$wf_file" >/dev/null 2>&1; then
-        err "$rel_path fails node --check"
+      # Workflow scripts run as an async function body, so `node --check`
+      # rejects valid ones. Parse as the runtime does; construct, never call.
+      if ! node -e '
+const fs = require("fs");
+const src = fs.readFileSync(process.argv[1], "utf8").replace(/^export\s+const\s+meta/m, "const meta");
+new Function("return (async () => {" + src + "\n})");
+' "$wf_file" >/dev/null 2>&1; then
+        err "$rel_path fails to parse as a workflow script body"
         continue
       fi
-      ok "$rel_path parses (node --check)"
+      ok "$rel_path parses as a workflow script body"
     else
       echo "WARN: node not found; $rel_path checked for meta block only" >&2
     fi
@@ -236,6 +266,152 @@ if [ -d "$WORKFLOWS_DIR" ]; then
   if [ ! -x "$REPO_ROOT/scripts/install-workflow.sh" ]; then
     err "scripts/install-workflow.sh is missing or not executable"
   fi
+fi
+
+# --- OpenCode plugin ---
+OPENCODE_DIR="$REPO_ROOT/opencode"
+PACKAGE_JSON="$REPO_ROOT/package.json"
+if [ -f "$PACKAGE_JSON" ]; then
+  if ! python3 -m json.tool "$PACKAGE_JSON" > /dev/null 2>&1; then
+    err "package.json is not valid JSON"
+  else
+    # One release, one version: drift would publish mismatched artefacts.
+    pkg_version="$(python3 -c "import json; print(json.load(open('$PACKAGE_JSON')).get('version',''))")"
+    plugin_version="$(python3 -c "import json; print(json.load(open('$PLUGIN_JSON')).get('version',''))")"
+    if [ "$pkg_version" != "$plugin_version" ]; then
+      err "package.json version ($pkg_version) does not match plugin.json version ($plugin_version)"
+    else
+      ok "package.json version matches plugin.json ($pkg_version)"
+    fi
+
+    pkg_main="$(python3 -c "import json; print(json.load(open('$PACKAGE_JSON')).get('main',''))")"
+    if [ ! -f "$REPO_ROOT/${pkg_main#./}" ]; then
+      err "package.json 'main' points at a missing file: $pkg_main"
+    fi
+  fi
+fi
+
+if [ -d "$OPENCODE_DIR" ]; then
+  OPENCODE_PLUGIN="$OPENCODE_DIR/dotnet-episteme.js"
+  OPENCODE_TEMPLATE="$OPENCODE_DIR/dotnet-review.template.md"
+
+  if [ ! -f "$OPENCODE_PLUGIN" ]; then
+    err "opencode/ exists but opencode/dotnet-episteme.js is missing"
+  elif command -v node >/dev/null 2>&1; then
+    if bash -c "cd '$REPO_ROOT' && node scripts/test-opencode-plugin.mjs" > /dev/null 2>&1; then
+      ok "OpenCode plugin registers skills, agents, command, and MCP (scripts/test-opencode-plugin.mjs)"
+    else
+      err "OpenCode plugin registration test failed - run node scripts/test-opencode-plugin.mjs for details"
+    fi
+  else
+    echo "WARN: node not found; OpenCode plugin registration not tested" >&2
+  fi
+
+  if [ ! -f "$OPENCODE_TEMPLATE" ]; then
+    err "opencode/dotnet-review.template.md is missing"
+  else
+    for placeholder in '{{PLUGIN_ROOT}}' '{{TIER_GUIDANCE}}'; do
+      if ! grep -qF "$placeholder" "$OPENCODE_TEMPLATE"; then
+        err "opencode/dotnet-review.template.md no longer contains $placeholder - the plugin substitutes it"
+      fi
+    done
+    frontmatter="$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$OPENCODE_TEMPLATE")"
+    if ! printf '%s\n' "$frontmatter" | grep -q '^description:'; then
+      err "opencode/dotnet-review.template.md missing frontmatter field: description"
+    else
+      ok "opencode/dotnet-review.template.md placeholders and frontmatter look valid"
+    fi
+  fi
+
+  if [ ! -x "$REPO_ROOT/scripts/install-opencode.sh" ]; then
+    err "scripts/install-opencode.sh is missing or not executable"
+  fi
+
+  # A comma-string `tools:` key makes OpenCode reject the whole document.
+  if grep -rlE '^tools: *[A-Za-z]+,' "$OPENCODE_DIR" 2>/dev/null | grep -q .; then
+    err "opencode/ contains a comma-string 'tools:' key - invalid in OpenCode's agent schema"
+  else
+    ok "opencode/ carries no Claude-only 'tools:' frontmatter"
+  fi
+fi
+
+# --- Codex plugin ---
+CODEX_MANIFEST="$REPO_ROOT/.codex-plugin/plugin.json"
+if [ -f "$CODEX_MANIFEST" ]; then
+  if ! python3 -m json.tool "$CODEX_MANIFEST" > /dev/null 2>&1; then
+    err ".codex-plugin/plugin.json is not valid JSON"
+  else
+    # Rules from the published plugin.json spec.
+    if ! CODEX_MANIFEST="$CODEX_MANIFEST" PLUGIN_JSON="$PLUGIN_JSON" REPO_ROOT="$REPO_ROOT" python3 - <<'PY'
+import json
+import os
+import pathlib
+import re
+import sys
+
+repo = pathlib.Path(os.environ["REPO_ROOT"])
+manifest = json.loads(pathlib.Path(os.environ["CODEX_MANIFEST"]).read_text())
+claude = json.loads(pathlib.Path(os.environ["PLUGIN_JSON"]).read_text())
+errors = []
+
+for field in ("name", "version", "description", "author"):
+    if not manifest.get(field):
+        errors.append(f"missing required field: {field}")
+if not isinstance(manifest.get("author"), dict) or not manifest.get("author", {}).get("name"):
+    errors.append("author.name is required")
+if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", str(manifest.get("name", ""))):
+    errors.append(f"name must be kebab-case: {manifest.get('name')!r}")
+if not re.fullmatch(r"\d+\.\d+\.\d+([-+].*)?", str(manifest.get("version", ""))):
+    errors.append(f"version must be strict semver: {manifest.get('version')!r}")
+if "hooks" in manifest:
+    errors.append("'hooks' fails Codex's marketplace validator (the runtime loader accepts it) - omit it; hooks/hooks.json is discovered automatically")
+if manifest.get("version") != claude.get("version"):
+    errors.append(f"version {manifest.get('version')} does not match plugin.json {claude.get('version')}")
+
+for url_field in ("websiteURL", "privacyPolicyURL", "termsOfServiceURL"):
+    url = (manifest.get("interface") or {}).get(url_field)
+    if url is not None and not str(url).startswith("https://"):
+        errors.append(f"interface.{url_field} must be an absolute https:// URL")
+
+mcp = manifest.get("mcpServers")
+if isinstance(mcp, str):
+    if not (repo / mcp.lstrip("./")).is_file():
+        errors.append(f"mcpServers path not found: {mcp}")
+elif mcp is not None and not isinstance(mcp, dict):
+    errors.append("mcpServers must be a path string or an object")
+
+roots = manifest.get("skills")
+for root in [roots] if isinstance(roots, str) else (roots or []):
+    if not (repo / str(root).lstrip("./")).is_dir():
+        errors.append(f"skills root not found: {root}")
+
+for problem in errors:
+    print(problem)
+sys.exit(1 if errors else 0)
+PY
+    then
+      err ".codex-plugin/plugin.json failed validation (see output above)"
+    else
+      ok ".codex-plugin/plugin.json is valid and version-aligned"
+    fi
+  fi
+
+  if [ ! -x "$REPO_ROOT/scripts/install-codex.sh" ]; then
+    err "scripts/install-codex.sh is missing or not executable"
+  fi
+
+  # This skill lives outside the shared skills root, so the loop above misses it.
+  while IFS= read -r codex_skill; do
+    [ -z "$codex_skill" ] && continue
+    rel_path="${codex_skill#"$REPO_ROOT"/}"
+    frontmatter="$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$codex_skill")"
+    for field in name description; do
+      if ! printf '%s\n' "$frontmatter" | grep -q "^${field}:"; then
+        err "$rel_path missing frontmatter field: $field"
+      fi
+    done
+    ok "$rel_path frontmatter looks valid"
+  done <<< "$(find "$REPO_ROOT/codex" -type f -name 'SKILL.md' 2>/dev/null | sort)"
 fi
 
 # --- Monitors (experimental) ---

@@ -20,6 +20,17 @@ jobs:
       - name: Run validate-marketplace.sh
         run: bash scripts/validate-marketplace.sh
 
+  opencode-plugin:
+    name: OpenCode Plugin Registration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test plugin registration
+        run: node scripts/test-opencode-plugin.mjs
+
   shellcheck:
     name: Shell Script Lint
     runs-on: ubuntu-latest

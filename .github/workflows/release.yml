@@ -125,8 +125,8 @@ jobs:
       - name: Build skills archive
         run: |
           VERSION="$(jq -r '.version' .claude-plugin/plugin.json)"
-          SKILL_COUNT="$(jq '.skills | length' .claude-plugin/plugin.json)"
-          tar -czf "dotnet-episteme-skills-${VERSION}.tar.gz" .claude-plugin .mcp.json agents bin commands docs monitors skills scripts workflows README.md
+          SKILL_COUNT="$(find skills -name SKILL.md | wc -l | tr -d ' ')"
+          tar -czf "dotnet-episteme-skills-${VERSION}.tar.gz" .claude-plugin .codex-plugin .mcp.json agents bin codex commands docs hooks monitors opencode package.json skills scripts workflows README.md
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "SKILL_COUNT=$SKILL_COUNT" >> "$GITHUB_ENV"
 
@@ -174,3 +174,44 @@ jobs:
             ### Skills archive
             `dotnet-episteme-skills-${{ env.VERSION }}.tar.gz` contains all skill definitions for manual installation.
           files: release-files/*
+
+  publish-npm:
+    name: Publish OpenCode plugin to npm
+    needs: [validate, publish]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify tag/package version alignment
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(jq -r '.version' package.json)"
+
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "ERROR: tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+
+      - name: Verify the packaged plugin registers
+        run: node scripts/test-opencode-plugin.mjs
+
+      - name: Publish to npm
+        if: env.NPM_TOKEN != ''
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Skip publish
+        if: env.NPM_TOKEN == ''
+        run: echo "NPM_TOKEN secret not configured - skipping npm publish. Set it in repo settings to enable."

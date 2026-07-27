@@ -18,7 +18,7 @@ The delegation prompt provides: review mode (Standard or Cynical), the diff or c
 ## Procedure
 
 1. Read your assigned sections of the checklist file.
-2. Read the changed files yourself with your file tools - fresh evidence only, no assumptions about what other reviewers saw. Use Grep for usage, guard, and test searches. Your Bash is restricted by a plugin hook to read-only git commands (diff, log, show, blame, status) with no shell operators.
+2. Read the changed files yourself with your file tools - fresh evidence only, no assumptions about what other reviewers saw. Use Grep for usage, guard, and test searches. Your shell access is restricted to read-only git commands (diff, log, show, blame, status) with no shell operators.
 3. Standard mode: apply the checklist to the changed code. Cynical mode: first generate at least 5 defect hypotheses within your sections, collect direct evidence (`file:line`, snippet, command output) for each, try to falsify each (tests, guards, design intent, invariants), and keep only survivors.
 4. Stay in your lane: report nothing outside your assigned sections, even if you notice it - other reviewers own those areas.
 
