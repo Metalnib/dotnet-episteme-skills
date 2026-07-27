@@ -1,0 +1,43 @@
+{
+  "name": "opencode-dotnet-episteme",
+  "version": "1.6.0",
+  "description": "OpenCode plugin for DotNet Episteme Skills: 10 .NET review/architecture skills, a five-reviewer + adversarial-maintainer review pipeline, and the Synopsis dependency-graph MCP server.",
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "dotnet",
+    "csharp",
+    "code-review",
+    "agent-skills",
+    "mcp"
+  ],
+  "homepage": "https://github.com/Metalnib/dotnet-episteme-skills#readme",
+  "bugs": "https://github.com/Metalnib/dotnet-episteme-skills/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Metalnib/dotnet-episteme-skills.git"
+  },
+  "license": "MIT",
+  "author": "Metalnib",
+  "type": "module",
+  "main": "./opencode/dotnet-episteme.js",
+  "exports": {
+    ".": "./opencode/dotnet-episteme.js"
+  },
+  "files": [
+    "opencode/",
+    "skills/",
+    "agents/review/",
+    "bin/",
+    "docs/opencode-setup.md",
+    "docs/tool-compatibility.md",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node scripts/test-opencode-plugin.mjs"
+  }
+}

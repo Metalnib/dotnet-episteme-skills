@@ -40,7 +40,13 @@ One command - skills activate automatically, and the review command, MCP server,
 
 ### Option 2: Plugin (OpenCode)
 
-OpenCode cannot consume Claude Code plugins, so clone and run the installer - it symlinks this repo's OpenCode plugin into `~/.config/opencode/plugin/` and verifies the result through the OpenCode CLI:
+OpenCode cannot consume Claude Code plugins, so it gets its own plugin - one command:
+
+```text
+opencode plugin opencode-dotnet-episteme -g
+```
+
+Or from a clone, which makes `git pull` the update path (best for contributors). The installer symlinks the plugin into `~/.config/opencode/plugin/`, pre-warms the Synopsis binary, and verifies all four registrations through the OpenCode CLI:
 
 ```bash
 git clone https://github.com/Metalnib/dotnet-episteme-skills.git

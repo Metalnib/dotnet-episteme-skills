@@ -6,6 +6,28 @@ Verified against OpenCode **1.18.7** on macOS.
 
 ## Install
 
+### From npm (one command)
+
+```bash
+opencode plugin opencode-dotnet-episteme -g
+```
+
+That installs the package and writes the plugin entry into your global config; OpenCode caches npm plugins under `~/.cache/opencode/node_modules/`. Restart OpenCode and the skills, the six `review-*` subagents, `/dotnet-review`, and the Synopsis MCP server are all registered.
+
+With this path you can also configure the plugin, which the file-based install cannot do (options only reach plugins declared in config):
+
+```jsonc
+// v1-shaped config (a document containing provider/agent/command/permission keys)
+{ "plugin": [["opencode-dotnet-episteme", { "strongModel": "anthropic/claude-opus-5" }]] }
+
+// v2-shaped config
+{ "plugins": [{ "package": "opencode-dotnet-episteme", "options": { "strongModel": "anthropic/claude-opus-5" } }] }
+```
+
+One caveat: Synopsis downloads its binary into the package directory inside OpenCode's npm cache, so a cache prune costs you a re-download. Put `synopsis` on your `PATH` (the detect script prefers it) if you want that to be permanent.
+
+### From a clone (symlink, best for contributors)
+
 ```bash
 git clone https://github.com/Metalnib/dotnet-episteme-skills.git
 cd dotnet-episteme-skills
@@ -60,7 +82,7 @@ opencode debug config                     # skills.paths, agent, command, mcp
 
 OpenCode's `task` tool takes `description`, `prompt`, `subagent_type`, `task_id` and `background` — there is **no per-invocation `model`**. The size-to-tier table in `/dotnet-review` therefore has no delivery mechanism by default: every reviewer runs on the session model, and the command says so instead of silently under-reviewing.
 
-To get tiering back, name a strong model and the plugin registers a second, pinned variant of every lane:
+To get tiering back, name a strong model and the plugin registers a second, pinned variant of every lane — via plugin options (npm install) or an env var (either install):
 
 ```bash
 DOTNET_EPISTEME_STRONG_MODEL=anthropic/claude-opus-5 opencode

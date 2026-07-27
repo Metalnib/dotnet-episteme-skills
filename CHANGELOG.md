@@ -10,10 +10,16 @@
 - **`scripts/install-opencode.sh` / `.ps1`** — symlink install (so `git pull` is the update path), a warning when a hand-copied Claude agent file is found in OpenCode's agent directory, Synopsis binary pre-warm (a fresh clone has no `bin/`, and OpenCode's MCP startup window is too short to download one), and CLI verification of all four registrations. `--verify` / `--uninstall` supported.
 - **`docs/opencode-setup.md`** — install, verification, the optional strong tier, the v1/v2 config-shape traps (one v2-shaped key in a v1 document silently discards the whole file), and troubleshooting.
 
+### Packaging
+- **npm package `opencode-dotnet-episteme`** — `package.json` publishes the OpenCode plugin with the skills, reviewer prompts, and Synopsis launcher (99 files; platform binaries stay auto-downloaded), so installing is `opencode plugin opencode-dotnet-episteme -g`. This is also the only path that can configure the plugin: options reach plugins declared in config, not plugins dropped into the plugin directory as files, so `{ "strongModel": "…" }` works here while the file install needs the env var.
+- **Release automation** — a tag-gated `publish-npm` job verifies tag/`package.json` alignment, re-runs the registration test, and publishes with provenance; it skips cleanly until the `NPM_TOKEN` secret exists. The skills archive now also carries `opencode/`, `hooks/`, and `package.json`.
+- **`scripts/validate.sh`** — fails when `package.json` and `.claude-plugin/plugin.json` versions drift, or when `main` points at a missing file.
+
 ### Fixes
 - **`scripts/validate.sh` workflow check** — `node --check` rejected `workflows/dotnet-review.js` because workflow scripts execute as an async function body, where top-level `return`/`await` are legal; the check now parses them the way the runtime does. This failure made validation red on `main`.
 
 ### Docs
+- **`docs/tool-compatibility.md`** — recorded that Codex installs this repo as a plugin with no Codex-specific files (verified on codex-cli 0.145.0: marketplace add, plugin add, 10 skills in the model prompt, `.mcp.json` read), plus the two gaps blocking the review pipeline there (`${CLAUDE_PLUGIN_ROOT}` unexpanded in MCP commands; `PreToolUse` carries no `agent_type`, so the read-only guard cannot scope itself to reviewers).
 - **`docs/tool-compatibility.md`** — corrected two false OpenCode rows (multi-subagent review and maintainer pushback are supported there, not "single-context only"), added rows for the reviewer sandbox and per-reviewer model tier, and recorded the contributor rule that `agents/review/*.md` stay Claude-shaped with the plugin converting them.
 - **`README.md`** — OpenCode install path; the skills count in the install table said 9, not 10.
 

@@ -247,6 +247,28 @@ fi
 
 # --- OpenCode plugin ---
 OPENCODE_DIR="$REPO_ROOT/opencode"
+PACKAGE_JSON="$REPO_ROOT/package.json"
+if [ -f "$PACKAGE_JSON" ]; then
+  if ! python3 -m json.tool "$PACKAGE_JSON" > /dev/null 2>&1; then
+    err "package.json is not valid JSON"
+  else
+    # The npm package and the plugin ship as one release, so a drifting version
+    # would publish an OpenCode plugin that disagrees with the marketplace entry.
+    pkg_version="$(python3 -c "import json; print(json.load(open('$PACKAGE_JSON')).get('version',''))")"
+    plugin_version="$(python3 -c "import json; print(json.load(open('$PLUGIN_JSON')).get('version',''))")"
+    if [ "$pkg_version" != "$plugin_version" ]; then
+      err "package.json version ($pkg_version) does not match plugin.json version ($plugin_version)"
+    else
+      ok "package.json version matches plugin.json ($pkg_version)"
+    fi
+
+    pkg_main="$(python3 -c "import json; print(json.load(open('$PACKAGE_JSON')).get('main',''))")"
+    if [ ! -f "$REPO_ROOT/${pkg_main#./}" ]; then
+      err "package.json 'main' points at a missing file: $pkg_main"
+    fi
+  fi
+fi
+
 if [ -d "$OPENCODE_DIR" ]; then
   OPENCODE_PLUGIN="$OPENCODE_DIR/dotnet-episteme.js"
   OPENCODE_TEMPLATE="$OPENCODE_DIR/dotnet-review.template.md"
