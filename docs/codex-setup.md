@@ -78,6 +78,21 @@ scripts/install-codex.sh --verify  # roles + config parse
 
 In the TUI: `/skills` lists the plugin's skills, `/hooks` should show `PreToolUse  Installed 1  Active 1`, and asking Codex to list its agent roles should return the six `review-*` names alongside `default`, `explorer` and `worker`.
 
+## Cost and concurrency
+
+A full pipeline run spends **six agent turns** - five reviewers plus the maintainer - on top of the orchestrator's own context. On a metered or free plan that is easily the most expensive thing you will run all day: a single review of a two-commit range was enough to exhaust a free monthly allowance during testing. The pipeline skill therefore states the cost up front and offers the single-context `dotnet-techne-code-review` skill for small diffs.
+
+Codex also caps concurrent agent threads per session, and the default is lower than this pipeline needs, so "five parallel reviewers" otherwise run in waves of three. `scripts/install-codex.sh` sets:
+
+```toml
+[agents]
+max_concurrent_threads_per_session = 6
+```
+
+If you already configure `[agents]` yourself, the installer leaves it alone and prints the setting to apply - two `[agents]` headers in one file is a TOML error.
+
+Spawned lanes appear in the transcript as threads named after the lane (`/root/correctness`, `/root/security_observability`), with hyphens normalised to underscores; that is Codex's thread naming, not a different role.
+
 ## Limits
 
 - **No scripted orchestration.** Codex has no workflow runtime, so the fan-out, dedupe and maintainer pass run in the orchestrator's context, and findings pass through it.

@@ -115,6 +115,18 @@ pathlib.Path(os.environ["BLOCK_OUT"]).write_text("\n".join(block), encoding="utf
 print(f"Wrote {len(block)} role layers to {roles}")
 PY
 
+  # Codex defaults to fewer concurrent agent threads than this pipeline needs, so
+  # five "parallel" reviewers actually run in waves. Only emit the [agents] header
+  # when the user has none of their own - two headers for one table is a TOML error.
+  if [ -f "$CONFIG" ] && strip_block | grep -qE '^\[agents\]|^agents\.max_concurrent_threads_per_session'; then
+    echo "NOTE  you already configure [agents] yourself - leaving concurrency alone."
+    echo "      For a full parallel fan-out set: agents.max_concurrent_threads_per_session = 6"
+  else
+    printf '[agents]\nmax_concurrent_threads_per_session = 6\n\n' | cat - "$BLOCK_FILE" > "$BLOCK_FILE.tmp"
+    mv "$BLOCK_FILE.tmp" "$BLOCK_FILE"
+    echo "Set agents.max_concurrent_threads_per_session = 6 (five reviewers + maintainer)"
+  fi
+
   {
     strip_block
     echo

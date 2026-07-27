@@ -11,9 +11,17 @@ You are the orchestrator. Do not review the code yourself - dispatch, then forma
 
 Paths below are relative to this skill's base directory. The checklists, scripts, and contracts live in the sibling review skill: `../../../skills/dotnet-techne-code-review/`.
 
-## Step 0 - Check the roles exist
+## Step 0 - Check the budget, then the roles
 
-The pipeline needs six roles: `review-correctness`, `review-performance`, `review-security-observability`, `review-data-messaging`, `review-generalist`, `review-maintainer`. List your available agent roles first. If they are missing, stop and tell the user to run `scripts/install-codex.sh` from the plugin, and use the `dotnet-techne-code-review` skill for a single-context review in the meantime.
+A full run spends **six agent turns** - five reviewers plus the maintainer - on top of your own context. That is the point (independent lanes, fresh-context falsification), but it is not free.
+
+Before fanning out, say in one line what the run will cost and offer the cheaper path when it fits: a diff under ~5 files with no security, public-API, data or messaging surface, or a user on a constrained plan, is better served by the single-context `dotnet-techne-code-review` skill. If the user wants the pipeline but not the full cost, drop lanes explicitly and name which and why - never silently review less than you claim.
+
+The roles: `review-correctness`, `review-performance`, `review-security-observability`, `review-data-messaging`, `review-generalist`, `review-maintainer`.
+
+## Step 0b - Check the roles exist
+
+List your available agent roles. If the `review-*` roles are missing, stop and tell the user to run `scripts/install-codex.sh` from the plugin, and use the `dotnet-techne-code-review` skill for a single-context review in the meantime.
 
 ## Step 1 - Resolve target and mode
 
@@ -35,6 +43,8 @@ Spawn the five reviewers **in parallel**, one per role, each with:
 - the finding block format: Severity / Area / Location / Evidence / Impact / Fix / Confidence.
 
 Reviewers stay blind to the session: no conversation history, no design rationale. Skip `review-data-messaging` only when database, messaging, AND HTTP-integration surfaces are all provably absent. Never skip the generalist. When in doubt, launch everything.
+
+Spawn all lanes in one go and wait for them together rather than polling in a loop. If your host caps concurrent agent threads below the number of lanes, they run in waves - say so, and do not mistake a wave for a finished lane. `scripts/install-codex.sh` sets `agents.max_concurrent_threads_per_session = 6` for exactly this reason.
 
 Model tier: a security, public-API, data or messaging surface deserves a strong model; a small change with no such surface (<=5 files, <=200 LOC) can run cheaper. Set it per spawn, or leave `agents.default_subagent_model` to decide. The maintainer is never weaker than the reviewers.
 
