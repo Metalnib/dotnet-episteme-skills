@@ -4,16 +4,17 @@
 
 ### OpenCode plugin (new)
 - `opencode/dotnet-episteme.js` registers the 10 skills, the five reviewers plus the adversarial maintainer as `review-*` subagents, `/dotnet-review`, and the Synopsis MCP server. Reviewer prompts come from `agents/review/*.md`, so the lanes stay single-sourced across tools.
-- Reviewers are read-only: `edit` and `webfetch` denied, bash limited to read-only git.
+- Reviewers are read-only and exfil-safe: `edit`, `webfetch`, `websearch`, and `task` denied; bash limited to read-only git with shell operators and output flags blocked by trailing deny rules (permission resolution is last-match-wins); reads outside the project allowed only for the plugin's own checklists.
 - `DOTNET_EPISTEME_STRONG_MODEL` (or plugin option `strongModel`) registers pinned `review-<lane>-strong` variants, because OpenCode's `task` tool takes no per-call model.
-- `scripts/install-opencode.sh` / `.ps1`: symlink install, Synopsis pre-warm, CLI verification, `--verify` / `--uninstall`.
+- `scripts/install-opencode.sh` / `.ps1`: symlink install, Synopsis pre-warm, CLI verification, `--verify` / `--uninstall`. On Windows without Developer Mode the fallback is a re-export shim (a plain copy resolves the plugin's root wrong and registers nothing; a copied file now degrades with instructions instead of throwing).
+- `opencode/dotnet-episteme.v2.js` — dormant module for OpenCode's beta v2 plugin API, linked via `scripts/install-opencode.sh --v2`; the stable v1 module stays the default.
 
 ### Codex plugin (new)
-- `.codex-plugin/plugin.json` and `codex/mcp.json`: `codex plugin add` installs the skills, the Synopsis MCP server, and the read-only git guard.
-- `codex/skills/dotnet-techne-review-pipeline` drives the multi-agent review, since Codex has no custom slash commands.
+- `.codex-plugin/plugin.json` and `codex/mcp.json`: `codex plugin add` installs the skills, the Synopsis MCP server, and the read-only git guard. The launcher lookup honours `CODEX_HOME` and reports a clear error when no installed copy is found.
+- `codex/skills/dotnet-techne-review-pipeline` drives the multi-agent review as a skill — Codex custom prompts are deprecated in favour of skills.
 - `scripts/install-codex.sh` registers the six `review-*` roles with `sandbox_mode = "read-only"` and raises `agents.max_concurrent_threads_per_session` to 6 so the lanes run in parallel. Idempotent, `--verify` / `--uninstall`.
 - The pipeline states its six-agent-turn cost before fanning out and offers the single-context review skill for small diffs.
-- `hooks/git-readonly-guard.sh` stays out of the way on Codex, whose `PreToolUse` payload carries no `agent_type`.
+- `hooks/git-readonly-guard.sh` also guards the Codex reviewer roles: Codex subagent `PreToolUse` payloads carry `agent_type`, so the guard scopes to the `review-*` lanes there too (project boundary from the payload `cwd`). One posture across tools: [docs/reviewer-restrictions.md](docs/reviewer-restrictions.md).
 
 ### Packaging
 - `package.json` packages the OpenCode plugin; a tag-gated `publish-npm` job publishes it once an `NPM_TOKEN` secret exists, and skips without one.

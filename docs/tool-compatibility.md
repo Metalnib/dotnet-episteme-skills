@@ -8,7 +8,7 @@ The 10 skills follow the [Agent Skills](https://agentskills.io/specification) st
 | Review with 5 reviewers + maintainer | `/dotnet-review` | ask for it (the `dotnet-techne-review-pipeline` skill) | `/dotnet-review` | not available — one-pass review skill instead |
 | Reviewers cannot change files | guard hook | read-only sandbox per role | read-only permissions per subagent | not enforced |
 | Synopsis graph tools | started by the plugin | started by the plugin | started by the plugin | run the CLI from the skill scripts |
-| A stronger model for big changes | chosen per reviewer | one model for all spawned reviewers, or per spawn | opt-in `review-*-strong` reviewers | not available |
+| A stronger model for big changes | chosen per reviewer | one model for all spawned reviewers (per-spawn override behind an experimental flag) | opt-in `review-*-strong` reviewers | not available |
 | Extra step after installing | none | one script, for the reviewer roles | none | copy the skills |
 | Synopsis log monitor | yes (experimental) | not yet | not yet | no |
 | Scripted review orchestration | yes (`workflows/dotnet-review.js`) | no — the skill drives it | no — the command drives it | no |
@@ -19,7 +19,7 @@ Windows: the Synopsis graph server starts through a shell script, so run your to
 ## Notes per tool
 
 - **Claude Code**: everything works out of the box. Reviewer agents are named `dotnet-episteme-skills:review:<name>`, Synopsis tools appear as `mcp__plugin_dotnet-episteme-skills_synopsis__<tool>`. If the graph server exits it is not restarted — reconnect with `/mcp`.
-- **OpenAI Codex**: the plugin installs the skills, the graph server and the read-only guard; `scripts/install-codex.sh` adds the reviewer roles, because plugins are not allowed to. Codex has no custom commands, so the review is a skill you ask for. See [codex-setup.md](codex-setup.md).
+- **OpenAI Codex**: the plugin installs the skills, the graph server and the read-only guard; `scripts/install-codex.sh` adds the reviewer roles, because plugins are not allowed to. The review is a skill you ask for — Codex custom prompts exist but are deprecated in favour of skills. See [codex-setup.md](codex-setup.md).
 - **OpenCode**: `scripts/install-opencode.sh` registers the skills, the reviewer subagents, `/dotnet-review` and the graph server. It also reads skills from `.claude/skills` and `.agents/skills` directly. See [opencode-setup.md](opencode-setup.md).
 - **pi (badlogic/pi-mono)**: point pi's skills setting at the `skills/` directory. No sub-agents, so the review runs in one pass.
 

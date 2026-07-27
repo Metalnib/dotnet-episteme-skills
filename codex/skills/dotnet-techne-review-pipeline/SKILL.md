@@ -46,7 +46,7 @@ Reviewers stay blind to the session: no conversation history, no design rational
 
 Spawn all lanes in one go and wait for them together rather than polling in a loop. If your host caps concurrent agent threads below the number of lanes, they run in waves - say so, and do not mistake a wave for a finished lane. `scripts/install-codex.sh` sets `agents.max_concurrent_threads_per_session = 6` for exactly this reason.
 
-Model tier: a security, public-API, data or messaging surface deserves a strong model; a small change with no such surface (<=5 files, <=200 LOC) can run cheaper. Set it per spawn, or leave `agents.default_subagent_model` to decide. The maintainer is never weaker than the reviewers.
+Model tier: a security, public-API, data or messaging surface deserves a strong model; a small change with no such surface (<=5 files, <=200 LOC) can run cheaper. Per-spawn model overrides sit behind Codex's experimental `features.multi_agent_v2.expose_spawn_agent_model_overrides` flag - when your spawn tool offers a `model` parameter, set it per reviewer. Otherwise every reviewer runs on `agents.default_subagent_model` (or the session model): if that tier is weaker than the change deserves, say so in one line before dispatching instead of silently under-reviewing. The maintainer is never weaker than the reviewers.
 
 ## Step 4 - Merge, then let the maintainer attack
 

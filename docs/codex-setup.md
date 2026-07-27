@@ -24,7 +24,7 @@ On first start Codex says `1 hook needs review before it can run`. Choose **Trus
 
 ## Using it
 
-- **The 10 skills**: type `@` and the skill name, or just describe what you need — Codex picks the right one.
+- **The 10 skills**: type `$` and the skill name (or run `/skills`), or just describe what you need — Codex picks the right one.
 - **A full review**: ask for a multi-agent review of a branch, a commit range, or your current changes. Codex runs five reviewers in parallel, then a sixth that tries to disprove their findings, and reports what survived.
 - **Dependency questions** ("what breaks if I change this?"): ask, and Codex uses the Synopsis graph tools.
 
@@ -49,7 +49,7 @@ Inside Codex, `/skills` lists the skills and `/hooks` should show `PreToolUse  I
 ## Good to know
 
 - **Windows**: the graph server starts through a shell script, so run Codex under WSL2 to get it. Skills and reviewers work on Windows as they are.
-- Reviewers cannot edit files: each one runs read-only.
+- Reviewers cannot edit files (read-only sandbox), and the plugin's guard hook limits their shell to read-only `git` inside your project. The full contract: [reviewer-restrictions.md](reviewer-restrictions.md).
 - The experimental log monitor works in Claude Code only.
 
 ## If something goes wrong

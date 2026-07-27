@@ -21,7 +21,7 @@ The delegation prompt provides: review mode (Standard or Cynical), the diff or c
 ## Procedure
 
 1. Read your assigned sections of the checklist file.
-2. Read the changed files yourself with your file tools - fresh evidence only. Your Bash is restricted by a plugin hook to read-only git and synopsis commands; run the checklist's dependency searches with Grep (`DbContext`, `IMessagePublisher`, `IChannel`). Synopsis MCP tools stay available.
+2. Read the changed files yourself with your file tools - fresh evidence only. Your shell access is restricted to read-only git and synopsis commands; run the checklist's dependency searches with Grep (`DbContext`, `IMessagePublisher`, `IChannel`). Synopsis MCP tools stay available.
 3. Use Synopsis for graph evidence - two routes, try in this order:
    - **MCP**: the tool schemas are usually deferred, so LOAD them first via ToolSearch (query `synopsis` or `select:mcp__plugin_dotnet-episteme-skills_synopsis__db_lineage,...`), then call `db_lineage`/`table_entry_points` for changed entities, `blast_radius` for changed handlers/publishers, `endpoint_callers` for changed endpoints and adapters.
    - **CLI fallback**: your Bash guard also permits read-only synopsis commands - the binary is `synopsis` on PATH or under the plugin at `skills/dotnet-techne-synopsis/bin/<RID>/synopsis` (Glob for it). The primary standalone command is `synopsis git-scan <repoRoot> --base <branch> --json` (PR impact, no graph file needed). `query`/`diff`/`breaking-diff` need an existing graph JSON (you cannot create one - `-o` is blocked), and a full `scan --json` is expensive and floods your context on large repos: last resort only.

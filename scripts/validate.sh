@@ -342,7 +342,7 @@ if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", str(manifest.get("name", ""))):
 if not re.fullmatch(r"\d+\.\d+\.\d+([-+].*)?", str(manifest.get("version", ""))):
     errors.append(f"version must be strict semver: {manifest.get('version')!r}")
 if "hooks" in manifest:
-    errors.append("'hooks' is rejected by Codex manifest validation - hooks/hooks.json is discovered automatically")
+    errors.append("'hooks' fails Codex's marketplace validator (the runtime loader accepts it) - omit it; hooks/hooks.json is discovered automatically")
 if manifest.get("version") != claude.get("version"):
     errors.append(f"version {manifest.get('version')} does not match plugin.json {claude.get('version')}")
 

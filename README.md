@@ -62,7 +62,7 @@ codex plugin add dotnet-episteme-skills@dotnet-episteme-marketplace
 scripts/install-codex.sh    # or from the installed copy under ~/.codex/plugins/cache/
 ```
 
-You get the 10 skills, six reviewers that cannot change files, and the Synopsis graph server. Codex has no custom commands, so you ask for a multi-agent review in your own words. More: [docs/codex-setup.md](docs/codex-setup.md).
+You get the 10 skills, six reviewers that cannot change files, and the Synopsis graph server. The review ships as a skill (Codex is deprecating custom slash prompts in favour of skills), so you ask for a multi-agent review in your own words. More: [docs/codex-setup.md](docs/codex-setup.md).
 
 > On first start Codex asks to trust the plugin's hook - choose *Trust all and continue*.
 >

@@ -3,6 +3,7 @@
 # as the update path: the plugin resolves its own location at load time.
 #
 #   scripts/install-opencode.sh              install (and verify)
+#   scripts/install-opencode.sh --v2         install the EXPERIMENTAL v2-API module instead
 #   scripts/install-opencode.sh --verify     verify an existing install only
 #   scripts/install-opencode.sh --uninstall  remove the symlink
 set -euo pipefail
@@ -13,13 +14,20 @@ CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 PLUGIN_DIR="$CONFIG_DIR/plugin"
 LINK="$PLUGIN_DIR/dotnet-episteme.js"
 MODE="install"
+VARIANT="v1"
 
-case "${1:-}" in
-  --verify) MODE="verify" ;;
-  --uninstall) MODE="uninstall" ;;
-  "") ;;
-  *) echo "Unknown argument: $1" >&2; exit 2 ;;
-esac
+for arg in "$@"; do
+  case "$arg" in
+    --verify) MODE="verify" ;;
+    --uninstall) MODE="uninstall" ;;
+    --v2) VARIANT="v2" ;;
+    *) echo "Unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
+
+if [ "$VARIANT" = "v2" ]; then
+  PLUGIN_SRC="$REPO_ROOT/opencode/dotnet-episteme.v2.js"
+fi
 
 if [ "$MODE" = "uninstall" ]; then
   rm -f "$LINK"
@@ -33,6 +41,12 @@ if [ "$MODE" = "install" ]; then
   mkdir -p "$PLUGIN_DIR"
   ln -sf "$PLUGIN_SRC" "$LINK"
   echo "Linked $LINK -> $PLUGIN_SRC"
+  if [ "$VARIANT" = "v2" ]; then
+    echo "NOTE: the v2 module targets OpenCode's BETA plugin API - no shipping"
+    echo "      OpenCode runs it yet. Skipping CLI verification; re-run without"
+    echo "      --v2 to return to the stable module."
+    exit 0
+  fi
 
   # Such a file breaks config resolution for the whole session.
   if [ -d "$CONFIG_DIR/agent" ] || [ -d "$CONFIG_DIR/agents" ]; then

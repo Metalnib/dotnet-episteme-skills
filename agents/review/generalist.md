@@ -21,7 +21,7 @@ The delegation prompt provides: review mode (Standard or Cynical), the diff, the
 
 ## Procedure
 
-1. Read the whole diff, then the changed files as needed - fresh evidence only. Your Bash is restricted by a plugin hook to read-only git commands (diff, log, show, blame, status).
+1. Read the whole diff, then the changed files as needed - fresh evidence only. Your shell access is restricted to read-only git commands (diff, log, show, blame, status).
 2. Standard mode: one pass over the hunt list above. Cynical mode: first generate at least 5 defect hypotheses in your scope, collect direct evidence (`file:line`), try to falsify each, keep survivors.
 3. If something clearly belongs to a specialist's section, drop it - overlap wastes the maintainer's time.
 

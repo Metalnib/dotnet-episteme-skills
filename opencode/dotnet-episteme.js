@@ -6,6 +6,7 @@
  * single source across tools; their Claude frontmatter is dropped because a
  * comma-string `tools:` key makes OpenCode reject the whole config document.
  */
+import { existsSync } from "node:fs"
 import { readdir, readFile } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -16,12 +17,20 @@ const COMMAND_TEMPLATE = path.join(ROOT, "opencode", "dotnet-review.template.md"
 const MCP_LAUNCHER = path.join(ROOT, "bin", "synopsis-mcp-launcher.sh")
 
 /**
- * Reviewers get read-only git and nothing else. Patterns anchor on the
- * subcommand so `git -C <elsewhere> diff` matches no allow rule.
+ * One posture across tools: docs/reviewer-restrictions.md. Resolution is
+ * last-match-wins, so the operator/output denies sit AFTER the git allows -
+ * `git diff && curl x` matches `git diff*` but the later `*&*` deny wins.
  */
 const REVIEWER_PERMISSION = {
   edit: "deny",
   webfetch: "deny",
+  // websearch is a separate permission from webfetch; both are exfil channels.
+  websearch: "deny",
+  // task would let a reviewer spawn a nested agent WITHOUT these restrictions.
+  task: "deny",
+  // Checklists live in the plugin repo, outside the reviewed project - the
+  // default `ask` would stall a headless subagent.
+  external_directory: { "*": "deny", [`${ROOT}/*`]: "allow" },
   bash: {
     "*": "deny",
     "git diff*": "allow",
@@ -31,6 +40,16 @@ const REVIEWER_PERMISSION = {
     "git status*": "allow",
     "git rev-parse*": "allow",
     "git merge-base*": "allow",
+    "*;*": "deny",
+    "*|*": "deny",
+    "*&*": "deny",
+    "*`*": "deny",
+    "*$(*": "deny",
+    "*>*": "deny",
+    "*<*": "deny",
+    "*\n*": "deny",
+    "*--output*": "deny",
+    "* -o *": "deny",
   },
 }
 
@@ -85,6 +104,15 @@ function tierGuidance(strong) {
 }
 
 export const DotnetEpisteme = async (_input, options) => {
+  // A COPIED plugin file resolves ROOT to the config dir, not the repo; fail
+  // with instructions instead of an exception that kills every registration.
+  if (!existsSync(REVIEW_AGENTS)) {
+    console.error(
+      `[dotnet-episteme] repo files not found at ${ROOT} - this file must be a ` +
+        `symlink (or shim) into the cloned repo, not a copy. Re-run scripts/install-opencode.sh (or .ps1).`,
+    )
+    return {}
+  }
   const reviewers = await loadReviewers()
   const template = split(await readFile(COMMAND_TEMPLATE, "utf8"))
   const strong = strongModel(options)

@@ -10,10 +10,11 @@ What is planned, so you can check before opening a request. Not a promise of dat
 
 ## Next
 
+- **OpenCode v2 plugin API** — a dormant v2 module ships (`scripts/install-opencode.sh --v2`); finalize when the beta API stabilises and expose Synopsis MCP through it
 - **Lighter review mode** — three reviewers instead of five, for metered plans
 - **Log monitor beyond Claude Code** — OpenCode and Codex both support the needed events
 - **Windows check** — the OpenCode installer's PowerShell version is untested
-- **Per-reviewer models in Codex** — currently one model for all spawned reviewers
+- **Per-reviewer models in Codex** — the spawn tool's `model` override sits behind the experimental `features.multi_agent_v2.expose_spawn_agent_model_overrides` flag; adopt when it stabilises
 
 ## Later
 

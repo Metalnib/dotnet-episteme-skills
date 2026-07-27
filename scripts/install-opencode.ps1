@@ -44,15 +44,17 @@ if (-not $Verify) {
     if (-not (Test-Path $pluginSrc)) { throw "Plugin not found: $pluginSrc" }
     New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
 
-    # A symlink needs Developer Mode or elevation; fall back to a copy, which
-    # costs the `git pull` update path but always works.
+    # A symlink needs Developer Mode or elevation; fall back to a shim that
+    # re-exports from the repo. A plain copy would resolve the plugin's ROOT to
+    # the config dir and register nothing.
     try {
         New-Item -ItemType SymbolicLink -Path $link -Target $pluginSrc -Force | Out-Null
         Write-Host "Linked $link -> $pluginSrc"
     }
     catch {
-        Copy-Item $pluginSrc $link -Force
-        Write-Warning "Symlink not permitted; copied instead. Re-run this script after each git pull."
+        $srcUrl = 'file:///' + ($pluginSrc -replace '\\', '/')
+        Set-Content -Path $link -Value "export { DotnetEpisteme } from `"$srcUrl`"" -Encoding utf8
+        Write-Host "Symlink not permitted; wrote a shim instead (git pull updates still apply): $link"
     }
 
     # A hand-copied Claude agent file breaks OpenCode's whole config document.

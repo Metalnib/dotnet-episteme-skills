@@ -5,8 +5,8 @@ set -euo pipefail
 
 INPUT="$(cat)"
 
-# No agent_type (Codex) means there is no reviewer to scope to; skip the check
-# rather than spawn python3 on every command.
+# Subagent calls carry agent_type on both Claude Code and Codex (>=0.145);
+# main-session calls don't - skip those without spawning python3.
 case "$INPUT" in
   *'"agent_type"'*) ;;
   *) exit 0 ;;
@@ -18,7 +18,12 @@ import json, os, re, sys
 
 data = json.loads(sys.argv[1])
 agent = data.get("agent_type") or ""
-if not agent.startswith("dotnet-episteme-skills:review:"):
+# Exact lane set (Claude namespaced, Codex flat) - a user's unrelated
+# "review-*" role must not be restricted.
+LANES = {"correctness", "performance", "security-observability",
+         "data-messaging", "generalist", "maintainer"}
+if not any(agent.startswith(p) and agent[len(p):] in LANES
+           for p in ("dotnet-episteme-skills:review:", "review-")):
     # Not one of this plugin's review agents (main session, other agents,
     # skills): exit 0 = no opinion, the normal permission flow applies.
     sys.exit(0)
@@ -36,7 +41,8 @@ if m:
     c_path = m.group(1)
     if c_path is None:
         sys.exit(0)
-    root = os.environ.get("CLAUDE_PROJECT_DIR")
+    # Codex has no CLAUDE_PROJECT_DIR; its payload carries the turn cwd instead.
+    root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd")
     if root:
         real, root_real = os.path.realpath(c_path), os.path.realpath(root)
         if real == root_real or real.startswith(root_real + os.sep):
