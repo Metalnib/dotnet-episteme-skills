@@ -319,14 +319,14 @@ Version is defined once in `src/synopsis/Directory.Build.props` and flows into t
    bash scripts/validate.sh && bash scripts/validate-marketplace.sh
    bash scripts/test-guard.sh && node scripts/test-opencode-plugin.mjs
    ```
-5. Tag and push - CI builds all 6 binaries, runs the test suite, publishes the GitHub release, then publishes the npm package:
+5. Tag and push - CI builds all 6 binaries, runs the test suite, and publishes the GitHub release:
    ```bash
    git tag v1.7.0
    git push origin main v1.7.0
    ```
-6. After the release, verify the remote install paths once: `/plugin marketplace add Metalnib/dotnet-episteme-skills` (Claude Code), `codex plugin marketplace add Metalnib/dotnet-episteme-skills` (Codex), and `opencode plugin opencode-dotnet-episteme -g` (OpenCode, once npm publishing is enabled).
+6. After the release, check the install paths once: `/plugin marketplace add Metalnib/dotnet-episteme-skills` (Claude Code), `codex plugin marketplace add Metalnib/dotnet-episteme-skills` (Codex), and `scripts/install-opencode.sh` from a fresh clone (OpenCode).
 
-**npm publishing** is optional and off until the `NPM_TOKEN` repository secret exists; the `publish-npm` job skips cleanly without it, so releases never go red. To enable it: create an npm account, generate an **Automation** access token, and add it as `NPM_TOKEN` under Settings → Secrets and variables → Actions. Publishing then happens in CI on every `v*` tag - no local Node tooling required.
+npm publishing is deferred to 2.0 ([roadmap](docs/roadmap.md)). The `publish-npm` job stays dormant until an `NPM_TOKEN` repository secret exists, so releases are unaffected.
 
 ---
 
