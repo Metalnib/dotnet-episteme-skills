@@ -4,7 +4,8 @@
     Installs this repo's OpenCode plugin on Windows.
 .DESCRIPTION
     Links opencode/dotnet-episteme.js into OpenCode's global plugin directory so
-    the skills, the six review-* subagents, and /dotnet-review are registered.
+    the skills, the thirteen worker subagents, and the /dotnet-review, /dotnet-qa
+    and /dotnet-refactor commands are registered.
 
     The Synopsis MCP server is NOT registered on native Windows: its launcher is
     a POSIX shell script. Run OpenCode under WSL2 (and use install-opencode.sh)
@@ -94,13 +95,17 @@ Test-Item 'skills path registered' ($config.skills.paths -contains $skillsPath) 
 
 $lanes = @(
     'review-correctness', 'review-performance', 'review-security-observability',
-    'review-data-messaging', 'review-generalist', 'review-maintainer'
+    'review-data-messaging', 'review-generalist', 'review-maintainer',
+    'refactor-cartographer', 'refactor-tracer', 'refactor-conformance-auditor', 'refactor-surveyor',
+    'qa-acceptance', 'qa-reuse-design', 'qa-dead-code'
 )
 $missing = $lanes | Where-Object { -not $config.agent.$_ }
-Test-Item 'six review subagents registered' (-not $missing) "missing $($missing -join ', ')"
-Test-Item '/dotnet-review command registered' ($null -ne $config.command.'dotnet-review')
+Test-Item 'thirteen worker subagents registered' (-not $missing) "missing $($missing -join ', ')"
+foreach ($name in @('dotnet-review', 'dotnet-qa', 'dotnet-refactor')) {
+    Test-Item "/$name command registered" ($null -ne $config.command.$name)
+}
 Write-Host '  SKIP  Synopsis MCP (native Windows - use WSL2 or the CLI)'
 
 Write-Host ''
 if ($failures) { throw "$failures check(s) failed" }
-Write-Host 'Done. Try /dotnet-review in OpenCode.'
+Write-Host 'Done. Try /dotnet-review, /dotnet-qa or /dotnet-refactor in OpenCode.'

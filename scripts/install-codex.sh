@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Registers the six review roles with Codex and pre-warms the Synopsis binary.
+# Registers the thirteen worker roles (review, refactor, qa) with Codex and
+# pre-warms the Synopsis binary.
 # Roles cannot ship inside a plugin: Codex only reads them from config.toml.
 #
 #   scripts/install-codex.sh              register roles (and pre-warm)
@@ -13,7 +14,7 @@ CONFIG="$CODEX_HOME/config.toml"
 ROLE_DIR="$CODEX_HOME/agents/dotnet-episteme"
 BEGIN_MARKER="# >>> dotnet-episteme-skills (managed) - edits inside this block are overwritten"
 END_MARKER="# <<< dotnet-episteme-skills (managed)"
-LANES="correctness performance security-observability data-messaging generalist maintainer"
+ROLES="review-correctness review-performance review-security-observability review-data-messaging review-generalist review-maintainer refactor-cartographer refactor-tracer refactor-conformance-auditor refactor-surveyor qa-acceptance qa-reuse-design qa-dead-code"
 MODE="install"
 
 case "${1:-}" in
@@ -56,12 +57,14 @@ if [ "$MODE" = "uninstall" ]; then
 fi
 
 if [ "$MODE" = "install" ]; then
-  [ -d "$ROOT/agents/review" ] || { echo "ERROR: $ROOT/agents/review not found" >&2; exit 1; }
+  for group in review refactor qa; do
+    [ -d "$ROOT/agents/$group" ] || { echo "ERROR: $ROOT/agents/$group not found" >&2; exit 1; }
+  done
   mkdir -p "$ROLE_DIR" "$CODEX_HOME"
   BLOCK_FILE="$(mktemp)"
   trap 'rm -f "$BLOCK_FILE" "$CONFIG.tmp"' EXIT
 
-  # Reviewer prompts come from agents/review/*.md so all tools share one copy.
+  # Worker prompts come from agents/{review,refactor,qa}/*.md so all tools share one copy.
   ROOT="$ROOT" ROLE_DIR="$ROLE_DIR" BLOCK_OUT="$BLOCK_FILE" python3 - <<'PY'
 import os, pathlib, sys
 
@@ -69,38 +72,46 @@ root = pathlib.Path(os.environ["ROOT"])
 roles = pathlib.Path(os.environ["ROLE_DIR"])
 block = []
 
-for src in sorted((root / "agents" / "review").glob("*.md")):
-    lines = src.read_text(encoding="utf-8").split("\n")
-    if lines[0].strip() != "---":
-        sys.exit(f"{src} has no YAML frontmatter")
-    end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), None)
-    if end is None:
-        sys.exit(f"{src} has an unterminated YAML frontmatter block")
+# Codex has no plugin commands; per-group pipeline skills drive the workers.
+SKILL_FOR_COMMAND = {
+    "the dotnet-review command": "the review-pipeline skill",
+    "the dotnet-refactor command": "the refactor-pipeline skill",
+    "the dotnet-qa command": "the qa-pipeline skill",
+}
 
-    front = lines[1:end]
-    body = "\n".join(lines[end + 1:]).strip()
-    description = next(
-        (line[len("description:"):].strip().strip('"') for line in front if line.startswith("description:")),
-        "",
-    )
-    if not body or not description:
-        sys.exit(f"{src} is missing a description or a body")
+for group in ("review", "refactor", "qa"):
+    for src in sorted((root / "agents" / group).glob("*.md")):
+        lines = src.read_text(encoding="utf-8").split("\n")
+        if lines[0].strip() != "---":
+            sys.exit(f"{src} has no YAML frontmatter")
+        end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), None)
+        if end is None:
+            sys.exit(f"{src} has an unterminated YAML frontmatter block")
 
-    # Codex has no /dotnet-review command; the pipeline skill drives the review.
-    description = description.replace("the dotnet-review command", "the review-pipeline skill")
+        front = lines[1:end]
+        body = "\n".join(lines[end + 1:]).strip()
+        description = next(
+            (line[len("description:"):].strip().strip('"') for line in front if line.startswith("description:")),
+            "",
+        )
+        if not body or not description:
+            sys.exit(f"{src} is missing a description or a body")
 
-    name = f"review-{src.stem}"
-    instructions = roles / f"{name}.md"
-    layer = roles / f"{name}.toml"
-    instructions.write_text(body + "\n", encoding="utf-8")
-    layer.write_text(
-        f'model_instructions_file = "{instructions}"\n'
-        # The guard cannot scope to a role on Codex, so the sandbox enforces this.
-        'sandbox_mode = "read-only"\n',
-        encoding="utf-8",
-    )
-    escaped = description.replace("\\", "\\\\").replace('"', '\\"')
-    block.append(f'[agents.{name}]\ndescription = "{escaped}"\nconfig_file = "{layer}"\n')
+        for command, skill in SKILL_FOR_COMMAND.items():
+            description = description.replace(command, skill)
+
+        name = f"{group}-{src.stem}"
+        instructions = roles / f"{name}.md"
+        layer = roles / f"{name}.toml"
+        instructions.write_text(body + "\n", encoding="utf-8")
+        layer.write_text(
+            f'model_instructions_file = "{instructions}"\n'
+            # The guard cannot scope to a role on Codex, so the sandbox enforces this.
+            'sandbox_mode = "read-only"\n',
+            encoding="utf-8",
+        )
+        escaped = description.replace("\\", "\\\\").replace('"', '\\"')
+        block.append(f'[agents.{name}]\ndescription = "{escaped}"\nconfig_file = "{layer}"\n')
 
 pathlib.Path(os.environ["BLOCK_OUT"]).write_text("\n".join(block), encoding="utf-8")
 print(f"Wrote {len(block)} role layers to {roles}")
@@ -125,7 +136,7 @@ PY
     echo "$END_MARKER"
   } > "$CONFIG.tmp"
   mv "$CONFIG.tmp" "$CONFIG"
-  echo "Registered the review roles in $CONFIG"
+  echo "Registered the worker roles in $CONFIG"
 
   # A cold download would exceed the MCP startup window.
   DETECT="$ROOT/skills/dotnet-techne-synopsis/scripts/detect-tool.sh"
@@ -145,13 +156,13 @@ if [ ! -f "$CONFIG" ]; then
   exit 1
 fi
 
-for lane in $LANES; do
-  if grep -q "^\[agents\.review-$lane\]$" "$CONFIG" &&
-     [ -f "$ROLE_DIR/review-$lane.toml" ] &&
-     [ -f "$ROLE_DIR/review-$lane.md" ]; then
-    echo "  OK    review-$lane registered"
+for role in $ROLES; do
+  if grep -q "^\[agents\.$role\]$" "$CONFIG" &&
+     [ -f "$ROLE_DIR/$role.toml" ] &&
+     [ -f "$ROLE_DIR/$role.md" ]; then
+    echo "  OK    $role registered"
   else
-    echo "  FAIL  review-$lane missing"
+    echo "  FAIL  $role missing"
     FAILURES=$((FAILURES + 1))
   fi
 done
@@ -181,4 +192,4 @@ if [ "$FAILURES" -gt 0 ]; then
   echo "$FAILURES check(s) failed."
   exit 1
 fi
-echo 'Done. Ask Codex for a multi-agent .NET review; it selects the dotnet-techne-review-pipeline skill.'
+echo 'Done. Ask Codex for a multi-agent .NET review, story QA, or a design loop; it selects the dotnet-techne-review-pipeline, dotnet-techne-qa-pipeline, or dotnet-techne-refactor-pipeline skill.'

@@ -157,21 +157,21 @@ if [ -d "$AGENTS_DIR" ]; then
     # or deny-list (`disallowedTools:`, needed to keep MCP tools visible), but
     # writes, nested agents and network stay off either way.
     case "$rel_path" in
-      agents/review/*)
+      agents/review/*|agents/refactor/*|agents/qa/*)
         if printf '%s\n' "$frontmatter" | grep -q '^tools:'; then
-          for forbidden in Write Edit Task WebFetch WebSearch; do
+          for forbidden in Write Edit NotebookEdit Task WebFetch WebSearch; do
             if printf '%s\n' "$frontmatter" | grep '^tools:' | grep -qw "$forbidden"; then
-              err "$rel_path allows '$forbidden' — reviewers must not write, spawn agents, or reach the network"
+              err "$rel_path allows '$forbidden' — worker lanes must not write, spawn agents, or reach the network"
             fi
           done
         elif printf '%s\n' "$frontmatter" | grep -q '^disallowedTools:'; then
-          for required in Write Edit Task WebFetch WebSearch; do
+          for required in Write Edit NotebookEdit Task WebFetch WebSearch; do
             if ! printf '%s\n' "$frontmatter" | grep '^disallowedTools:' | grep -qw "$required"; then
               err "$rel_path uses disallowedTools but does not deny '$required'"
             fi
           done
         else
-          err "$rel_path has neither 'tools:' nor 'disallowedTools:' — reviewer restrictions unenforced"
+          err "$rel_path has neither 'tools:' nor 'disallowedTools:' — worker restrictions unenforced"
         fi
         ;;
     esac
@@ -235,6 +235,18 @@ if [ -f "$HOOKS_JSON" ]; then
       err "guard test matrix failed - run scripts/test-guard.sh for details"
     fi
   fi
+
+  # The state-file convention is shared between the reload hook and the
+  # refactor command; if one moves, the other silently stops finding files.
+  RELOAD_HOOK="$REPO_ROOT/hooks/design-state-reload.sh"
+  REFACTOR_CMD="$REPO_ROOT/commands/dotnet-refactor.md"
+  if [ -f "$RELOAD_HOOK" ] && [ -f "$REFACTOR_CMD" ]; then
+    if grep -qF '.episteme' "$RELOAD_HOOK" && grep -qF 'DESIGN-' "$RELOAD_HOOK" && grep -qF '.episteme/DESIGN-' "$REFACTOR_CMD"; then
+      ok "state-file convention (.episteme/DESIGN-*.md) consistent across hook and command"
+    else
+      err "state-file convention drift: hooks/design-state-reload.sh must discover .episteme/DESIGN-*.md and commands/dotnet-refactor.md must write it"
+    fi
+  fi
 fi
 
 # --- Workflows (dynamic workflow scripts) ---
@@ -293,7 +305,6 @@ fi
 
 if [ -d "$OPENCODE_DIR" ]; then
   OPENCODE_PLUGIN="$OPENCODE_DIR/dotnet-episteme.js"
-  OPENCODE_TEMPLATE="$OPENCODE_DIR/dotnet-review.template.md"
 
   if [ ! -f "$OPENCODE_PLUGIN" ]; then
     err "opencode/ exists but opencode/dotnet-episteme.js is missing"
@@ -307,21 +318,53 @@ if [ -d "$OPENCODE_DIR" ]; then
     echo "WARN: node not found; OpenCode plugin registration not tested" >&2
   fi
 
-  if [ ! -f "$OPENCODE_TEMPLATE" ]; then
-    err "opencode/dotnet-review.template.md is missing"
-  else
-    for placeholder in '{{PLUGIN_ROOT}}' '{{TIER_GUIDANCE}}'; do
-      if ! grep -qF "$placeholder" "$OPENCODE_TEMPLATE"; then
-        err "opencode/dotnet-review.template.md no longer contains $placeholder - the plugin substitutes it"
-      fi
-    done
-    frontmatter="$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$OPENCODE_TEMPLATE")"
-    if ! printf '%s\n' "$frontmatter" | grep -q '^description:'; then
-      err "opencode/dotnet-review.template.md missing frontmatter field: description"
-    else
-      ok "opencode/dotnet-review.template.md placeholders and frontmatter look valid"
+  # {{TIER_GUIDANCE}} is only substituted for the tiered-lane templates.
+  for template_name in dotnet-review dotnet-qa dotnet-refactor; do
+    template_file="$OPENCODE_DIR/$template_name.template.md"
+    if [ ! -f "$template_file" ]; then
+      err "opencode/$template_name.template.md is missing"
+      continue
     fi
-  fi
+    if ! grep -qF '{{PLUGIN_ROOT}}' "$template_file"; then
+      err "opencode/$template_name.template.md no longer contains {{PLUGIN_ROOT}} - the plugin substitutes it"
+    fi
+    # Only the review template sizes a tier; qa/refactor lanes inherit the
+    # session model by design (1.8.0).
+    case "$template_name" in
+      dotnet-review)
+        if ! grep -qF '{{TIER_GUIDANCE}}' "$template_file"; then
+          err "opencode/$template_name.template.md no longer contains {{TIER_GUIDANCE}} - the plugin substitutes it"
+        fi
+        ;;
+    esac
+    frontmatter="$(awk '/^---$/{n++; next} n==1{print} n>=2{exit}' "$template_file")"
+    if ! printf '%s\n' "$frontmatter" | grep -q '^description:'; then
+      err "opencode/$template_name.template.md missing frontmatter field: description"
+    else
+      ok "opencode/$template_name.template.md placeholders and frontmatter look valid"
+    fi
+    # Every {{PLUGIN_ROOT}}/<path> a template dereferences must be shipped in the
+    # npm `files` list, or an npm-installed plugin dereferences a missing file.
+    while IFS= read -r ref; do
+      [ -z "$ref" ] && continue
+      if ! PACKAGE_JSON="$PACKAGE_JSON" REF="$ref" python3 - <<'PY'
+import json, os, sys
+ref = os.environ["REF"]
+files = json.load(open(os.environ["PACKAGE_JSON"])).get("files", [])
+# A ref is shipped if it equals, or sits under, any listed file/dir entry.
+def covered(r):
+    for f in files:
+        f = f.rstrip("/")
+        if r == f or r.startswith(f + "/"):
+            return True
+    return False
+sys.exit(0 if covered(ref) else 1)
+PY
+      then
+        err "opencode/$template_name.template.md references {{PLUGIN_ROOT}}/$ref but package.json 'files' does not ship it"
+      fi
+    done <<< "$(grep -oE '\{\{PLUGIN_ROOT\}\}/[A-Za-z0-9._/-]+' "$template_file" | sed 's|{{PLUGIN_ROOT}}/||' | sort -u)"
+  done
 
   if [ ! -x "$REPO_ROOT/scripts/install-opencode.sh" ]; then
     err "scripts/install-opencode.sh is missing or not executable"

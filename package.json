@@ -1,7 +1,7 @@
 {
   "name": "opencode-dotnet-episteme",
-  "version": "1.7.0",
-  "description": "OpenCode plugin for DotNet Episteme Skills: 10 .NET review/architecture skills, a five-reviewer + adversarial-maintainer review pipeline, and the Synopsis dependency-graph MCP server.",
+  "version": "1.8.0",
+  "description": "OpenCode plugin for DotNet Episteme Skills: 11 .NET review/architecture skills, a five-reviewer + adversarial-maintainer review pipeline, a story-QA pipeline, a phase-gated refactor loop, and the Synopsis dependency-graph MCP server.",
   "keywords": [
     "opencode",
     "opencode-plugin",
@@ -28,9 +28,13 @@
     "opencode/",
     "skills/",
     "agents/review/",
+    "agents/refactor/",
+    "agents/qa/",
     "bin/",
     "docs/opencode-setup.md",
     "docs/tool-compatibility.md",
+    "docs/reviewer-restrictions.md",
+    "docs/using-the-pipelines.md",
     "LICENSE",
     "README.md",
     "CHANGELOG.md"

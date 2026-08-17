@@ -1,6 +1,6 @@
 {
   "name": "dotnet-episteme-skills",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Production-tested .NET skills for code review, dependency analysis, API design, concurrency, and performance, plus the Synopsis dependency-graph MCP server.",
   "author": {
     "name": "Metalnib",
@@ -25,7 +25,7 @@
   "interface": {
     "displayName": "DotNet Episteme Skills",
     "shortDescription": "Production-tested .NET review and architecture skills.",
-    "longDescription": "Ten Agent Skills covering .NET code review, CRAP/coverage risk, cross-repo impact, C# API design, coding standards, concurrency patterns, type-design performance, NuGet package inspection, serialisation, and the Synopsis dependency graph. Ships the Synopsis MCP server for blast-radius and breaking-change analysis across .NET workspaces, plus a read-only git guard hook for review agents.",
+    "longDescription": "Eleven Agent Skills covering .NET code review, story QA, CRAP/coverage risk, cross-repo impact, C# API design, coding standards, concurrency patterns, type-design performance, NuGet package inspection, serialisation, and the Synopsis dependency graph. Ships three multi-agent pipeline skills (review, story QA, phase-gated refactor loop), the Synopsis MCP server for blast-radius and breaking-change analysis across .NET workspaces, plus a read-only git guard hook for the worker agents.",
     "developerName": "Metalnib",
     "category": "developer-tools",
     "capabilities": [

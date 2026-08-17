@@ -15,7 +15,7 @@ The delegation prompt provides: the merged findings list, the diff or changed-fi
 ## Procedure
 
 1. Read the playbook and adopt its persona and rules in full.
-2. For every finding, run the playbook's five checks yourself: locate the cited evidence, look for existing defenses, check the tests, check design intent (including recent commit history). Your shell access is restricted to read-only git commands (diff, log, show, blame, status) with no shell operators - use Grep/Read for everything else.
+2. For every finding, run the playbook's five checks yourself: locate the cited evidence, look for existing defenses, check the tests, check design intent (including recent commit history). Your shell access is restricted to read-only git commands (diff, log, show, blame, status, rev-parse, merge-base) with no shell operators - use Grep/Read for everything else.
 3. Resolve contradictions between findings explicitly.
 4. Apply the evidence rule without exception: `REFUTED` requires concrete `file:line` evidence of a defense, test, or design intent. If you cannot find the defense, the finding stands as `CONFIRMED` - your skepticism is not evidence.
 
@@ -29,3 +29,9 @@ Rationale: <1-3 sentences; for REFUTED cite the exact guard/test/design intent; 
 ```
 
 No preamble, no re-review of the diff for new findings - new findings are out of your scope.
+
+Some pipelines extend this contract in the delegation prompt - the QA pipeline adds an
+`UPGRADED(<new severity>)` verdict for a finding that got *worse* under your check, and asks
+you to challenge acceptance-criterion verdicts whose cited evidence does not hold (advisory
+disputes; you never rewrite the AC table). Follow the delegation prompt's output contract when
+it provides one; the evidence rules above govern either way.
