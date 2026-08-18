@@ -32,7 +32,7 @@ fi
 if [ "$MODE" = "uninstall" ]; then
   rm -f "$LINK"
   echo "Removed $LINK"
-  echo "Skills, agents, the /dotnet-review command, and the Synopsis MCP server are gone from OpenCode."
+  echo "Skills, agents, the /dotnet-review, /dotnet-qa and /dotnet-refactor commands, and the Synopsis MCP server are gone from OpenCode."
   exit 0
 fi
 
@@ -118,11 +118,20 @@ expected = {
     "review-data-messaging",
     "review-generalist",
     "review-maintainer",
+    "refactor-cartographer",
+    "refactor-tracer",
+    "refactor-conformance-auditor",
+    "refactor-surveyor",
+    "qa-acceptance",
+    "qa-reuse-design",
+    "qa-dead-code",
 }
 missing = sorted(expected - set(agents))
-check("six review subagents registered", not missing, f"missing {missing}")
+check("thirteen worker subagents registered", not missing, f"missing {missing}")
 
-check("/dotnet-review command registered", "dotnet-review" in (config.get("command") or {}))
+commands = config.get("command") or {}
+for name in ("dotnet-review", "dotnet-qa", "dotnet-refactor"):
+    check(f"/{name} command registered", name in commands)
 
 if sys.platform == "win32":
     print("  SKIP  Synopsis MCP (native Windows — use WSL2 or the CLI)")
@@ -133,4 +142,4 @@ sys.exit(1 if failures else 0)
 PY
 
 echo
-echo 'Done. Try /dotnet-review in OpenCode, and "opencode mcp list" to confirm Synopsis connects.'
+echo 'Done. Try /dotnet-review, /dotnet-qa or /dotnet-refactor in OpenCode, and "opencode mcp list" to confirm Synopsis connects.'

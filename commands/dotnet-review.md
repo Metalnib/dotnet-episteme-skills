@@ -11,7 +11,7 @@ Arguments given: `$ARGUMENTS`
 
 ## Step 1 — Resolve target and mode
 
-- Target: a branch name, commit range, `--staged`, or (if empty) the current uncommitted changes. For a document/spec review target, use the `dotnet-techne-code-review` skill instead of this command.
+- Target: a branch name, commit range, `--staged`, or (if empty) the current uncommitted changes. For a document/spec review target, use the `dotnet-techne-code-review` skill instead of this command. For verifying a story implementation against its spec/acceptance criteria, use `/dotnet-qa` - this command hunts defects, not spec conformance.
 - Mode: **Cynical** if `--cynical` was passed or the user's request language is explicitly skeptical ("tear this apart", "assume this is broken", "devil's advocate"); otherwise **Standard**.
 - Intent pack (maintainer only, never shown to reviewers): 2-5 lines summarizing what was built and any deliberate trade-offs decided in this session, if you have that context.
 

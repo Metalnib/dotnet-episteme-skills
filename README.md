@@ -18,15 +18,17 @@ Pick your tool. Claude Code, OpenCode and Codex each get a plugin with the skill
 
 | What you get | Claude Code | OpenCode | Codex | Skills only |
 |---|---|---|---|---|
-| The 10 skills | ✓ | ✓ | ✓ | ✓ |
+| The 11 skills | ✓ | ✓ | ✓ | ✓ |
 | Review with 5 reviewers + a reviewer that challenges them | `/dotnet-review` | `/dotnet-review` | ask for it (a skill) | one-pass review skill instead |
 | Synopsis dependency graph, started for you | ✓ | ✓ | ✓ | start it yourself, or use the CLI |
-| Reviewers cannot change files | ✓ | ✓ | ✓ | — |
+| Story QA against the spec (per-AC verdicts, reuse, dead code) | `/dotnet-qa` | `/dotnet-qa` | ask for it (a skill) | one-pass QA skill instead |
+| Phase-gated refactor loop with a design approval gate | `/dotnet-refactor` | `/dotnet-refactor` | ask for it (a skill) | — |
+| Worker agents cannot change files | ✓ | ✓ | ✓ | — |
 | A stronger model for big changes | automatic | opt-in | opt-in | — |
 | Experimental log monitor | ✓ | — | — | — |
 | Extra step after installing | none | none | one script | copy the skills |
 
-Per-tool details: [docs/tool-compatibility.md](docs/tool-compatibility.md). Planned work: [docs/roadmap.md](docs/roadmap.md).
+How to use the three pipelines, in plain words: [docs/using-the-pipelines.md](docs/using-the-pipelines.md). Per-tool details: [docs/tool-compatibility.md](docs/tool-compatibility.md). Planned work: [docs/roadmap.md](docs/roadmap.md).
 
 ### Option 1: Plugin (Claude Code)
 
@@ -48,13 +50,13 @@ cd dotnet-episteme-skills
 scripts/install-opencode.sh
 ```
 
-You get the 10 skills, `/dotnet-review` with its six reviewers, and the Synopsis graph server. `git pull` updates all of it. More: [docs/opencode-setup.md](docs/opencode-setup.md).
+You get the 11 skills, `/dotnet-review` with its six reviewers, `/dotnet-qa`, `/dotnet-refactor`, and the Synopsis graph server. `git pull` updates all of it. More: [docs/opencode-setup.md](docs/opencode-setup.md).
 
 > Don't copy `agents/review/*.md` into OpenCode's own agent folder - they are written for Claude Code and OpenCode rejects them in a way that breaks its config. The installer converts them for you.
 
 ### Option 3: Plugin (Codex)
 
-Two commands install the plugin, then one script adds the reviewer roles (Codex only accepts those from its own config):
+Two commands install the plugin, then one script adds the thirteen worker roles (Codex only accepts those from its own config):
 
 ```bash
 codex plugin marketplace add Metalnib/dotnet-episteme-skills
@@ -62,7 +64,7 @@ codex plugin add dotnet-episteme-skills@dotnet-episteme-marketplace
 scripts/install-codex.sh    # or from the installed copy under ~/.codex/plugins/cache/
 ```
 
-You get the 10 skills, six reviewers that cannot change files, and the Synopsis graph server. The review ships as a skill (Codex is deprecating custom slash prompts in favour of skills), so you ask for a multi-agent review in your own words. More: [docs/codex-setup.md](docs/codex-setup.md).
+You get the 11 skills, thirteen worker roles that cannot change files, and the Synopsis graph server. The pipelines ship as skills (Codex is deprecating custom slash prompts in favour of skills), so you ask for a multi-agent review, a story QA, or a design loop in your own words. More: [docs/codex-setup.md](docs/codex-setup.md).
 
 > On first start Codex asks to trust the plugin's hook - choose *Trust all and continue*.
 >
@@ -74,7 +76,7 @@ Download the latest archive from the [releases page](https://github.com/Metalnib
 
 ```bash
 # Linux / macOS
-tar -xzf dotnet-episteme-skills-1.7.0.tar.gz
+tar -xzf dotnet-episteme-skills-1.8.0.tar.gz
 cp -R skills/* ~/.claude/skills/          # Claude Code (skills only, no plugin extras)
 cp -R skills/* ~/.config/opencode/skill/  # OpenCode
 cp -R skills/* ~/.agents/skills/          # OpenAI Codex
@@ -83,7 +85,7 @@ cp -R skills/* ~/.agents/skills/          # OpenAI Codex
 
 ```powershell
 # Windows
-Expand-Archive dotnet-episteme-skills-1.7.0.zip .
+Expand-Archive dotnet-episteme-skills-1.8.0.zip .
 Copy-Item -Recurse skills\* "$env:USERPROFILE\.claude\skills\"
 ```
 
@@ -118,7 +120,9 @@ This plugin deliberately ships no `.lsp.json` of its own: only the first registe
 | `dotnet-techne-code-review` | Production-readiness review of .NET code: correctness, security, performance, data access, messaging, observability | After every AI-generated implementation, before any PR |
 | `dotnet-techne-synopsis` | Roslyn-based dependency graph across all your repos: blast radius, cross-service call map, EF Core lineage, breaking-change diff | "What breaks if I change this?" across a microservices landscape |
 | `dotnet-techne-inspect` | Decompiles and surfaces the public API of any NuGet package - internal or third-party | Before writing code against a package where you don't have the source |
+| `dotnet-techne-story-qa` | Verifies a story implementation against its spec: per-AC verdicts with evidence and proving tests, reuse/design conformance, dead code, stale docs | Before marking a story done - "did we build what the ticket asked for?" |
 | `dotnet-techne-crap-analysis` | Finds high-complexity, low-coverage methods (CRAP score) | Deciding where to focus test effort in a large codebase |
+| `dotnet-techne-cross-repo-impact` | Checks a PR for breaking changes that hit other repos: API, DTO, endpoint, EF entity, NuGet package - and whether a compatible downstream PR already exists | Before merging a change to anything other services consume |
 | `dotnet-techne-csharp-api-design` | Breaking-change detection, versioning strategy, deprecation paths, compatibility shims | Evolving a public or shared API without breaking callers |
 | `dotnet-techne-csharp-coding-standards` | Modern C# idiom review: records, patterns, nullability, immutability | "Is this idiomatic?" or general refactoring guidance |
 | `dotnet-techne-csharp-concurrency-patterns` | Async primitive selection, backpressure, lock-free patterns, deadlock detection | Choosing between async/await, `Channel<T>`, Dataflow, or Rx |
@@ -135,7 +139,9 @@ The review covers correctness (exception safety, CancellationToken propagation, 
 
 Two modes are available. Standard is the default - balanced coverage of correctness, maintainability, and risk. Cynical/Adversarial mode assumes defects exist until disproven, generates at least five failure hypotheses, and validates each with evidence before reporting. Use it when the code is on a critical path or when you want the hardest possible challenge.
 
-On Claude Code with the plugin installed, `/dotnet-episteme-skills:dotnet-review [target] [--cynical] [--model tier]` upgrades this to a multi-agent pipeline: five reviewers run in parallel, each in a fresh isolated context (correctness/API, performance/AOT, security/observability, data/messaging/HTTP-integration, plus a generalist that hunts what falls between the lanes), then an adversarial maintainer agent independently re-verifies every finding and refutes the ones that don't survive scrutiny - per [maintainer-playbook.md](skills/dotnet-techne-code-review/references/maintainer-playbook.md). The orchestration is a bundled [dynamic workflow](workflows/dotnet-review.js): deterministic script, reviewer model scaled to change size in code, findings kept out of your conversation. Expect it to run slower than the single-context skill path - the isolated reviewers and adversarial verification buy more thorough, run-to-run-consistent results in exchange for the extra time. `bash scripts/install-workflow.sh` optionally installs it as a native `/dotnet-review` command. On other tools the same playbook runs as a single-context falsification pass.
+With the plugin installed, `/dotnet-review [target] [--cynical] [--model tier]` (fully: `/dotnet-episteme-skills:dotnet-review`) upgrades this to a multi-agent pipeline. Five reviewers run in parallel, each in a fresh isolated context: correctness/API, performance/AOT, security/observability, data/messaging/HTTP-integration, plus a generalist that hunts what falls between the lanes. Then an adversarial maintainer re-verifies every finding and refutes the ones that don't survive scrutiny, per [maintainer-playbook.md](skills/dotnet-techne-code-review/references/maintainer-playbook.md).
+
+The orchestration is a bundled [dynamic workflow](workflows/dotnet-review.js): a deterministic script that scales the reviewer model to the size of the change and keeps raw findings out of your conversation. It runs slower than the single-context skill path - isolated reviewers and adversarial verification buy more thorough, run-to-run-consistent results in exchange for the time. `bash scripts/install-workflow.sh` optionally installs it as a native `/dotnet-review` command. On other tools the same playbook runs as a single-context falsification pass.
 
 ```
 Review the new OrdersController I just generated.
@@ -259,6 +265,36 @@ What changed in PrimeLabs.Messaging between 4.1 and 4.2? I need to migrate this 
 
 ---
 
+## Story QA - did we build what the ticket asked for?
+
+Code review hunts defects in a diff. The `dotnet-techne-story-qa` skill asks the other question: does the implementation match its **spec**? It finds the spec itself (an explicit path, the ticket key in your branch name, plan or design files in the repo) and asks you when nothing turns up. Skipping the spec is always your explicit choice, never a silent fallback.
+
+You get one verdict per acceptance criterion - IMPLEMENTED / PARTIAL / MISSING - with file:line evidence and the test that proves it. Alongside that: reinvented helpers, drift from the project's patterns, dead code, stale docs and log texts, and comment discipline. The result is a FAIL / CONCERNS / PASS gate, persisted to `.episteme/QA-<slug>.md`. Comment findings carry their exact replacement line, and nothing is applied without your confirmation.
+
+`/dotnet-qa [ticket|branch] [--spec path] [--base branch]` runs it as a pipeline on Claude Code and OpenCode (on Codex you ask for it): three lanes in parallel, then the adversarial maintainer from the review pipeline falsifies the findings and challenges acceptance verdicts whose evidence does not hold, so a false "IMPLEMENTED" cannot pass unexamined.
+
+```
+QA this branch against YB-13323.
+
+Verify this story's implementation against the acceptance criteria.
+
+Did we cover all ACs of the spec in docs/specs/payment-retry.md? Anything dead left behind?
+```
+
+---
+
+## Refactor loop - design before code, with gates
+
+`/dotnet-refactor` is a phase-gated design loop for non-trivial refactoring (Claude Code and OpenCode; on Codex you ask for it). Session-blind workers map the complete branch/consumer/sibling set and walk every dataflow path under failure conditions before any design exists. Probes verify vendor behaviour instead of assuming it. Then the design gate stops for your approval, before a single line changes.
+
+After approval the design is frozen. If it has to change mid-flight, a conformance auditor re-checks the entire branch against the new design - the author never grades their own homework. Out-of-scope findings go to an append-only Deferred ledger instead of widening the branch. State lives in `.episteme/DESIGN-<slug>.md`, so the loop survives `/clear`, compaction and fresh sessions.
+
+Small target? `--lite` runs one combined map-and-trace worker instead of the full fan-out, and escalates honestly when the area turns out bigger than one pass should carry.
+
+A plain-words walkthrough of all three pipelines: [docs/using-the-pipelines.md](docs/using-the-pipelines.md).
+
+---
+
 ## Other skills
 
 These skills handle specific .NET engineering concerns. Each activates automatically when you describe the relevant problem.
@@ -266,6 +302,7 @@ These skills handle specific .NET engineering concerns. Each activates automatic
 | Skill | Best for |
 |---|---|
 | `dotnet-techne-crap-analysis` | "Which methods are highest risk (high complexity, low coverage)?" Prioritises where to focus test effort. |
+| `dotnet-techne-cross-repo-impact` | "Does this PR break another repo?" Cross-repo API, DTO, endpoint, entity and package breaks, plus compatible-PR search. |
 | `dotnet-techne-csharp-api-design` | Designing a new public API or evolving an existing one without breaking callers. Covers versioning, deprecation, compatibility shims. |
 | `dotnet-techne-csharp-coding-standards` | "Is this idiomatic modern C#?" Refactoring guidance, pattern choices, maintainability. |
 | `dotnet-techne-csharp-concurrency-patterns` | Choosing between async/await, `Channel<T>`, `IAsyncEnumerable`, Dataflow, Rx. Avoiding lock contention and deadlocks. |
@@ -280,11 +317,13 @@ These skills handle specific .NET engineering concerns. Each activates automatic
 
 ```
 skills/                  One folder per skill, each with SKILL.md (portable, Agent Skills spec)
-agents/                  Claude Code plugin subagents (review pipeline)
-commands/                Claude Code slash commands (/dotnet-review orchestrator)
+agents/                  Claude Code plugin subagents (review, refactor, and qa lanes)
+commands/                Claude Code slash commands (/dotnet-review, /dotnet-qa, /dotnet-refactor)
+workflows/               Bundled dynamic workflow scripts for the three pipelines
+hooks/                   PreToolUse git guard + refactor-loop state reload
 bin/                     Plugin launcher scripts (Synopsis MCP)
 monitors/                Experimental Claude Code background monitors
-docs/                    Refactor plan and per-tool compatibility matrix
+docs/                    Pipeline usage guide, per-tool setup and compatibility, worker restrictions
 src/synopsis/            Synopsis source (.NET 10)
   Synopsis.Analysis/     Roslyn analysis, graph model, querying
   Synopsis/              CLI, MCP server, JSON output
@@ -321,8 +360,8 @@ Version is defined once in `src/synopsis/Directory.Build.props` and flows into t
    ```
 5. Tag and push - CI builds all 6 binaries, runs the test suite, and publishes the GitHub release:
    ```bash
-   git tag v1.7.0
-   git push origin main v1.7.0
+   git tag v1.8.0
+   git push origin main v1.8.0
    ```
 6. After the release, check the install paths once: `/plugin marketplace add Metalnib/dotnet-episteme-skills` (Claude Code), `codex plugin marketplace add Metalnib/dotnet-episteme-skills` (Codex), and `scripts/install-opencode.sh` from a fresh clone (OpenCode).
 

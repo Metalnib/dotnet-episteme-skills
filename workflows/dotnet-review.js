@@ -1,6 +1,7 @@
 export const meta = {
-  name: 'dotnet-review',
-  description: 'Multi-agent .NET code review: scout sizes the change, 5 reviewers run in parallel (4 specialists + a generalist), an adversarial maintainer refutes weak findings.',
+  // -workers keeps pickers from showing a twin of the command, which launches this by scriptPath, not name.
+  name: 'dotnet-review-workers',
+  description: 'Not a command - this is the engine /dotnet-review starts under the hood; type /dotnet-review to run a review. Scout sizes the change, 5 reviewers run in parallel (4 specialists + a generalist), the adversarial maintainer refutes weak findings.',
   whenToUse: 'Reviewing a .NET branch, commit range, staged or uncommitted changes. Pass args {target, cynical?, model?, pluginRoot?, intentPack?}. For document/spec review use the dotnet-techne-code-review skill instead.',
   phases: [
     { title: 'Scope', detail: 'scout gathers changed files, LOC, surfaces; script picks the model tier' },
@@ -9,7 +10,7 @@ export const meta = {
   ],
 }
 
-// version: 1.6.0 (keep in sync with plugin.json; installer prints this line)
+// version: 1.8.0 (keep in sync with plugin.json; installer prints this line)
 const input = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 const target = input.target ?? 'uncommitted changes'
 const cynical = !!input.cynical

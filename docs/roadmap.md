@@ -2,6 +2,12 @@
 
 What is planned, so you can check before opening a request. Not a promise of dates.
 
+## Done — 1.8.0
+
+- Refactor pipeline: `/dotnet-refactor` phase-gated design loop with session-blind map/trace workers, a design approval gate, a conformance audit after design changes, `.episteme/DESIGN-<slug>.md` state that survives compaction (reload hook on Claude Code), and a `--lite` single-worker mode for small targets
+- Story QA pipeline: `/dotnet-qa` verifies a story against its spec — per-AC verdicts, reuse/design conformance, dead code — with a spec-discovery cascade and a deterministic FAIL/CONCERNS/PASS gate persisted to `.episteme/QA-<slug>.md`
+- Both pipelines on all three tools (commands on Claude Code/OpenCode, pipeline skills on Codex) with the worker-restriction contract extended to the new lanes
+
 ## Done — 1.7.0
 
 - OpenCode plugin: skills, `/dotnet-review`, reviewer subagents, Synopsis graph server

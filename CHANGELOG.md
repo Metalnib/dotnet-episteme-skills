@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.8.0] — 2026-08-17
+
+### Refactor pipeline (new)
+- `/dotnet-refactor` runs a phase-gated design loop. Session-blind workers (`refactor:cartographer`, `refactor:tracer`) build the branch/consumer map and walk every dataflow path before any design exists, an approval gate guards implementation, and `refactor:conformance-auditor` re-checks the whole branch after any design change. `workflows/dotnet-refactor.js` fans the phases out and keeps raw worker output out of the conversation.
+- `--lite` runs one combined `refactor:surveyor` on small targets, and escalates instead of skimming when the area turns out too big.
+- State lives in `.episteme/DESIGN-<slug>.md`: status-routed frontmatter, the approved design frozen in a fence, out-of-scope findings in an append-only `Deferred` ledger. `hooks/design-state-reload.sh` re-injects it on startup, compact, clear and resume; PreCompact hooks flush unpersisted state first.
+
+### Story QA pipeline (new)
+- `/dotnet-qa` verifies a story against its spec: per-AC verdicts (IMPLEMENTED/PARTIAL/MISSING) with file:line evidence and the proving test, reuse and design conformance, dead code, stale words. `/dotnet-review` keeps the defect-hunting lane; the two are complementary.
+- Spec discovery is a cascade: `--spec` → ticket key from the argument or branch name → repo artifacts → ask the user. Skipping the spec is an explicit choice and the dropped acceptance lane is announced. The spec pack carries ticket comments, issue links and the contract source of truth as content, because read-only workers cannot dereference a URL; a repo-local QA skill's rules fold in and win on conflict.
+- Three session-blind lanes (`qa:acceptance`, `qa:reuse-design`, `qa:dead-code`) plus `review:maintainer`; the orchestrator runs the build and tests, and `workflows/dotnet-qa.js` computes a FAIL/CONCERNS/PASS gate into `.episteme/QA-<slug>.md`. All lanes inherit the session model - no runtime tier sizing (`--model` stays as the explicit override).
+- The maintainer runs even on an all-IMPLEMENTED table, can upgrade a finding that got worse, and disputes AC verdicts whose evidence does not hold. A maintainer that fails to run gates CONCERNS instead of passing unfalsified findings.
+- The dead-code lane checks comments against `references/comment-rules.md` and carries the exact replacement line; those fixes are applied only after explicit confirmation, the one write this flow offers.
+- The report carries a verdict line, an owner tag per finding, a `Dropped` section for what falsification killed, a `Checked` coverage table and a `Yours to call` close. New portable skill `dotnet-techne-story-qa` runs the same QA in a single context on hosts without subagents.
+
+### Cross-tool parity
+- OpenCode registers all thirteen worker lanes and the three commands; the v2 module and the strong-tier variants mirror it.
+- Codex gets `dotnet-techne-qa-pipeline` and `dotnet-techne-refactor-pipeline`; `scripts/install-codex.sh` registers all thirteen roles read-only.
+- The bundled workflows register as `dotnet-review-workers`, `dotnet-qa-workers` and `dotnet-refactor-workers`, each described as "not a command", so pickers no longer show twins of the three commands (which launch them by scriptPath, unaffected).
+- `docs/using-the-pipelines.md` walks through all three pipelines in plain words.
+
+### Hardening
+- The git guard covers the refactor and qa lanes under both Claude and Codex names; unrelated user roles with the same prefixes stay untouched. `rev-parse` and `merge-base` join the allowlist. `git diff --no-index` is denied everywhere, since it turns diff into a generic reader of arbitrary files.
+- Refactor lanes get a wider read-only shell than the review lanes: rg/fd with grep/find fallbacks, plus ls, cat, head, tail, wc and tree. Each tool's own write and exec flags are denied (clustered short forms included), reads stay inside the project, and shell operators stay blocked. Full contract: `docs/reviewer-restrictions.md`.
+- `scripts/validate.sh` enforces the worker-restriction frontmatter on the new lanes, keeps the `.episteme/DESIGN-` convention in sync between hook and command, and validates all three OpenCode command templates. `scripts/test-guard.sh` and `scripts/test-opencode-plugin.mjs` cover the new lanes and commands.
+
 ## [1.7.0] — 2026-07-27
 
 ### OpenCode plugin (new)

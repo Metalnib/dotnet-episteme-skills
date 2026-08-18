@@ -12,8 +12,8 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
-const REVIEW_AGENTS = path.join(ROOT, "agents", "review")
-const COMMAND_TEMPLATE = path.join(ROOT, "opencode", "dotnet-review.template.md")
+const WORKER_GROUPS = ["review", "refactor", "qa"]
+const COMMANDS = ["dotnet-review", "dotnet-qa", "dotnet-refactor"]
 const MCP_LAUNCHER = path.join(ROOT, "bin", "synopsis-mcp-launcher.sh")
 
 // v2 permissions are an ordered ruleset; resolution is last-match-wins, so the
@@ -41,9 +41,44 @@ const REVIEWER_RULES = [
   { action: "bash", resource: "*>*", effect: "deny" },
   { action: "bash", resource: "*<*", effect: "deny" },
   { action: "bash", resource: "*\n*", effect: "deny" },
-  { action: "bash", resource: "*--output*", effect: "deny" },
+  // Whole-flag --output only (git's read-only --output-indicator stays allowed).
+  { action: "bash", resource: "*--output *", effect: "deny" },
+  { action: "bash", resource: "*--output=*", effect: "deny" },
+  // git diff --no-index is a generic file reader (any path on the machine).
+  { action: "bash", resource: "*--no-index*", effect: "deny" },
   { action: "bash", resource: "* -o *", effect: "deny" },
 ]
+
+// Refactor workers: same ruleset plus read-only search/list tools (fast tools
+// with GNU fallbacks, probed via `command -v`). The tool allows sit before the
+// operator and per-tool-flag denies so those still win (last-match-wins);
+// blanket "* -o *" is dropped (rg/grep use -o for --only-matching).
+const PATH_TOOLS = ["rg", "fd", "grep", "find", "ls", "eza", "cat", "head", "tail", "wc", "tree", "stat", "file"]
+const SEARCH_ALLOWS = [...PATH_TOOLS, "command -v", "which"]
+  .map((tool) => ({ action: "bash", resource: `${tool} *`, effect: "allow" }))
+// Each tool's own write/exec flags, denied after the allows (last-match-wins).
+// Coarser than the hook's regex - over-blocks some safe forms rather than ever
+// under-blocking; the hook is the precise layer (docs/reviewer-restrictions.md).
+const TOOL_FLAG_DENIES = [
+  ...["--pre", "--hostname-bin", "--search-zip", " -z"].map((f) => ({ action: "bash", resource: `rg*${f}*`, effect: "deny" })),
+  ...["-o", "--output"].map((f) => ({ action: "bash", resource: `tree*${f}*`, effect: "deny" })),
+  ...["-C", "--compile"].map((f) => ({ action: "bash", resource: `file*${f}*`, effect: "deny" })),
+  ...["-delete", "-exec", "-ok", "-fprint", "-fls", "--exec"].map((f) => ({ action: "bash", resource: `find*${f}*`, effect: "deny" })),
+  // fd exec can cluster (fd -Hx); deny x/X 0-3 chars into a leading cluster.
+  ...["x", "X"].flatMap((c) => ["-", "-?", "-??", "-???"].map((pre) => ({ action: "bash", resource: `fd* ${pre}${c}*`, effect: "deny" }))),
+  ...["--exec", "--exec-batch"].map((f) => ({ action: "bash", resource: `fd*${f}*`, effect: "deny" })),
+]
+// Confine reads to the project (per search tool, not git): no absolute/home/parent operands.
+const PATH_CONFINE_DENIES = PATH_TOOLS.flatMap((t) =>
+  [`${t}* /*`, `${t}* ~/*`, `${t}* ../*`, `${t}*/../*`].map((g) => ({ action: "bash", resource: g, effect: "deny" })))
+const REFACTOR_RULES = [
+  ...REVIEWER_RULES.filter((r) => r.action !== "bash" || r.effect === "allow" || r.resource === "*"),
+  ...SEARCH_ALLOWS,
+  ...REVIEWER_RULES.filter((r) => r.action === "bash" && r.effect === "deny" && r.resource !== "*" && r.resource !== "* -o *"),
+  ...TOOL_FLAG_DENIES,
+  ...PATH_CONFINE_DENIES,
+]
+const rulesFor = (name) => (name.startsWith("refactor-") ? REFACTOR_RULES : REVIEWER_RULES)
 
 function split(text) {
   const lines = text.split("\n")
@@ -57,14 +92,20 @@ function split(text) {
   }
 }
 
-async function loadReviewers() {
-  const files = (await readdir(REVIEW_AGENTS)).filter((f) => f.endsWith(".md")).sort()
-  return Promise.all(
-    files.map(async (file) => {
-      const { description, body } = split(await readFile(path.join(REVIEW_AGENTS, file), "utf8"))
-      return { name: `review-${path.basename(file, ".md")}`, description, prompt: body }
+async function loadWorkers() {
+  const groups = await Promise.all(
+    WORKER_GROUPS.map(async (group) => {
+      const dir = path.join(ROOT, "agents", group)
+      const files = (await readdir(dir)).filter((f) => f.endsWith(".md")).sort()
+      return Promise.all(
+        files.map(async (file) => {
+          const { description, body } = split(await readFile(path.join(dir, file), "utf8"))
+          return { name: `${group}-${path.basename(file, ".md")}`, description, prompt: body }
+        }),
+      )
     }),
   )
+  return groups.flat()
 }
 
 /** Apply a draft transform defensively - beta draft shapes may change. */
@@ -80,40 +121,50 @@ function transform(ctx, kind, fn) {
 export default {
   id: "metalnib.dotnet-episteme",
   server: async (ctx) => {
-    if (!existsSync(REVIEW_AGENTS)) {
+    const missingPaths = [
+      ...WORKER_GROUPS.map((g) => path.join(ROOT, "agents", g)),
+      ...COMMANDS.map((c) => path.join(ROOT, "opencode", `${c}.template.md`)),
+    ].filter((p) => !existsSync(p))
+    if (missingPaths.length) {
       console.error(
-        `[dotnet-episteme v2] repo files not found at ${ROOT} - this file must be a ` +
-          `symlink (or shim) into the cloned repo. Re-run scripts/install-opencode.sh --v2.`,
+        `[dotnet-episteme v2] plugin files missing at ${ROOT} (${missingPaths.map((p) => path.relative(ROOT, p)).join(", ")}) - ` +
+          `this file must be a symlink (or shim) into a complete cloned repo. Re-run scripts/install-opencode.sh --v2.`,
       )
       return
     }
-    const reviewers = await loadReviewers()
-    const template = split(await readFile(COMMAND_TEMPLATE, "utf8"))
+    const workers = await loadWorkers()
+    const templates = Object.fromEntries(
+      await Promise.all(
+        COMMANDS.map(async (name) => [name, split(await readFile(path.join(ROOT, "opencode", `${name}.template.md`), "utf8"))]),
+      ),
+    )
 
     transform(ctx, "agent", (agents) => {
-      for (const reviewer of reviewers) {
-        agents.update(reviewer.name, (agent) => {
-          agent.description ??= reviewer.description
+      for (const worker of workers) {
+        agents.update(worker.name, (agent) => {
+          agent.description ??= worker.description
           agent.mode ??= "subagent"
-          agent.system ??= reviewer.prompt
+          agent.system ??= worker.prompt
           agent.permissions ??= []
-          if (agent.permissions.length === 0) agent.permissions.push(...REVIEWER_RULES)
+          if (agent.permissions.length === 0) agent.permissions.push(...rulesFor(worker.name))
         })
       }
       return agents
     })
 
     transform(ctx, "command", (commands) => {
-      commands.update("dotnet-review", (command) => {
-        command.description ??= template.description
-        command.template ??= template.body
-          .replace(/<!--[\s\S]*?-->\s*/g, "")
-          .replaceAll("{{PLUGIN_ROOT}}", ROOT)
-          .replaceAll(
-            "{{TIER_GUIDANCE}}",
-            "Every reviewer runs on the current session model (v2: register pinned variants when the API settles).",
-          )
-      })
+      for (const [name, template] of Object.entries(templates)) {
+        commands.update(name, (command) => {
+          command.description ??= template.description
+          command.template ??= template.body
+            .replace(/<!--[\s\S]*?-->\s*/g, "")
+            .replaceAll("{{PLUGIN_ROOT}}", ROOT)
+            .replaceAll(
+              "{{TIER_GUIDANCE}}",
+              "Every lane runs on the current session model (v2: register pinned variants when the API settles).",
+            )
+        })
+      }
       return commands
     })
 
