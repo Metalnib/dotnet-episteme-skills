@@ -23,16 +23,20 @@ changes:
 /dotnet-review --staged --cynical
 ```
 
-A scout sizes the change and captures the diff. Five reviewers then read it in parallel, each
-in a fresh context with its own specialty: correctness and API design, performance and AOT,
-security and observability, data access and messaging, plus a generalist hunting what falls
-between those lanes. Their findings are merged, and an adversarial "maintainer" agent tries to
-refute each one - anything it can kill with file:line evidence never reaches you. You get a
-single report: findings with evidence, impact, a concrete fix, and the maintainer's
-counter-check on each.
+A scout sizes the change and pins it to two commit SHAs. Up to five reviewers then read it in
+parallel, each in a fresh context with its own specialty: correctness and API design,
+performance and AOT, security and observability, data access and messaging, plus a generalist
+hunting what falls between those lanes. Each one produces the diff itself with a read-only git
+command, so the scout never has to retype the change. The four specialists get tests and
+generated files filtered out of their diff, and on a change that touches only tests they are
+skipped entirely - the report says which ones and why.
+
+Their findings are merged, and an adversarial "maintainer" agent tries to refute each one -
+anything it can kill with file:line evidence never reaches you. You get a single report:
+findings with evidence, impact, a concrete fix, and the maintainer's counter-check on each.
 
 Add `--cynical` when you want the harshest pass (every reviewer must form and falsify defect
-hypotheses), `--model opus|fable` to force a tier. The review changes nothing - it reports, you
+hypotheses), `--model opus|fable` to force a model, `--effort low|medium|high|xhigh|max` to force how hard the reviewers think (by default that scales with the size of the change, and Cynical adds a step). The review changes nothing - it reports, you
 decide.
 
 ## /dotnet-qa — verify a story against its spec

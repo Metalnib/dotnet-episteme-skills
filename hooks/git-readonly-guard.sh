@@ -40,9 +40,12 @@ cmd = (data.get("tool_input") or {}).get("command") or ""
 if re.search(r"[;&|<>`$]", cmd) or "\n" in cmd:
     print("Blocked for plugin worker agents: shell operators are not allowed.", file=sys.stderr)
     sys.exit(2)
-# Refactor workers sweep whole solutions; they get the read-only search/list
-# tools on top of git and synopsis - fast tools (rg, fd) plus the GNU
-# fallbacks, and `command -v`/`which` to probe which is installed.
+# Every worker group gets the read-only search/list tools on top of git and
+# synopsis - fast tools (rg, fd) plus the GNU fallbacks, and `command -v`/`which`
+# to probe which is installed. Review and qa lanes used to be denied these, which
+# only cost them a run of failed calls before they fell back to the Grep tool:
+# the native Read/Grep/Glob tools are not seen by this hook at all, so denying the
+# shell equivalents bought no confinement it did not already lack.
 #
 # The shell-operator block above stops chaining/redirection; but several of
 # these tools can execute or write through their OWN flags with no operator at
@@ -60,7 +63,7 @@ DANGER_FLAGS = {
     "find": r"(^|\s)(-delete|-exec\w*|-ok\w*|-fprint\w*|-fls)(\s|$)",
     "fd":   r"(^|\s)(--exec|--exec-batch)(\s|=|$)|(^|\s)-[A-Za-z]*[xX]",
 }
-if matched_group == "refactor":
+if matched_group in ("refactor", "review", "qa"):
     if re.match(r"^\s*(command\s+-v|which)\s", cmd):
         sys.exit(0)
     tm = re.match(r"^\s*(rg|fd|grep|ls|eza|cat|head|tail|wc|tree|file|stat|find)\b", cmd)
@@ -69,25 +72,40 @@ if matched_group == "refactor":
         if danger and re.search(danger, cmd):
             print(f"Blocked for plugin worker agents: {tm.group(1)} write/exec flags are not allowed.", file=sys.stderr)
             sys.exit(2)
-        # Confine reads to the project: no absolute paths and no parent-directory
-        # escapes in the operands. NOTE this governs the SHELL only - the native
-        # Read/Grep/Glob tools are not seen by this hook (see
-        # docs/reviewer-restrictions.md), so on Claude Code this is defence in
-        # depth, not an absolute read sandbox.
+        # Confine reads to the project. An absolute path is allowed when it
+        # resolves inside the project directory - the same rule `git -C` already
+        # uses below, and what a worker naturally writes when it knows the repo
+        # root. Parent-directory escapes stay banned outright. NOTE this governs
+        # the SHELL only - the native Read/Grep/Glob tools are not seen by this
+        # hook (see docs/reviewer-restrictions.md), so on Claude Code this is
+        # defence in depth, not an absolute read sandbox.
         try:
             tokens = shlex.split(cmd)
         except ValueError:
             print("Blocked for plugin worker agents: could not parse the command safely.", file=sys.stderr)
             sys.exit(2)
+        # Codex has no CLAUDE_PROJECT_DIR; its payload carries the turn cwd instead.
+        proj = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd")
+
+        def inside_project(path):
+            if not proj:
+                return False
+            real = os.path.realpath(os.path.expanduser(path))
+            proj_real = os.path.realpath(proj)
+            return real == proj_real or real.startswith(proj_real + os.sep)
+
         for tok in tokens[1:]:
             if tok.startswith("-"):
-                if re.search(r"=(/|~)", tok):
-                    print("Blocked for plugin worker agents: absolute paths in flag values are not allowed; search within the project.", file=sys.stderr)
+                fv = re.search(r"=([~/].*)$", tok)
+                if fv and not inside_project(fv.group(1)):
+                    print("Blocked for plugin worker agents: that flag value points outside the project directory.", file=sys.stderr)
                     sys.exit(2)
                 continue
             if tok.startswith("/") or tok.startswith("~"):
-                print("Blocked for plugin worker agents: absolute paths are not allowed; search within the project (relative paths) or use the Grep tool.", file=sys.stderr)
-                sys.exit(2)
+                if not inside_project(tok):
+                    print("Blocked for plugin worker agents: that path is outside the project directory; search within the project or use the Read/Grep tools.", file=sys.stderr)
+                    sys.exit(2)
+                continue
             if tok == ".." or tok.startswith("../") or "/../" in tok or tok.endswith("/.."):
                 print("Blocked for plugin worker agents: parent-directory escapes are not allowed.", file=sys.stderr)
                 sys.exit(2)

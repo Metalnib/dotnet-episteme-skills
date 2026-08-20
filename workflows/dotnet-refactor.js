@@ -11,7 +11,7 @@ export const meta = {
   ],
 }
 
-// version: 1.8.0 (keep in sync with plugin.json; installer prints this line)
+// version: 1.8.1 (keep in sync with plugin.json; installer prints this line)
 const input = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 if (!input.repoRoot) return { halted: true, reason: 'args.repoRoot is required' }
 const repoRoot = input.repoRoot

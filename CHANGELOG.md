@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.1] — 2026-08-20
+
+- Reviews start faster. The scout stops retyping the diff. It returns two commit SHAs plus the file lists, and each worker runs `git diff` itself.
+- Fable no longer runs on its own. Opus is the top tier the script picks. Pass `--model fable` when you want it.
+- Reviewers think harder on big changes instead: high above 20 files or 1000 LOC, xhigh above 50 files or 3000 LOC. `--cynical` adds a step, `--effort` overrides everything.
+- The 4 specialists skip tests and generated files. On a test-only change they do not run, and the report says which ones and why.
+- Secret files never reach a diff. The script checks the names itself now, so a scout mistake cannot leak one.
+- A worker that cannot run its diff says so. Before, its empty result looked like a clean review.
+- Reviewers can run `rg` and `grep` again. They used to waste calls on blocked commands.
+- QA marks an AC as PARTIAL when its evidence sits in a hidden file. It used to say MISSING, which forces FAIL.
+- The dead-code check asks the analyzer first (Rider MCP, then LSP), then falls back to grep.
+
 ## [1.8.0] — 2026-08-17
 
 ### Refactor pipeline (new)

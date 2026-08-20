@@ -19,7 +19,7 @@ Pick your tool. Claude Code, OpenCode and Codex each get a plugin with the skill
 | What you get | Claude Code | OpenCode | Codex | Skills only |
 |---|---|---|---|---|
 | The 11 skills | ✓ | ✓ | ✓ | ✓ |
-| Review with 5 reviewers + a reviewer that challenges them | `/dotnet-review` | `/dotnet-review` | ask for it (a skill) | one-pass review skill instead |
+| Review with up to 5 reviewers + a reviewer that challenges them | `/dotnet-review` | `/dotnet-review` | ask for it (a skill) | one-pass review skill instead |
 | Synopsis dependency graph, started for you | ✓ | ✓ | ✓ | start it yourself, or use the CLI |
 | Story QA against the spec (per-AC verdicts, reuse, dead code) | `/dotnet-qa` | `/dotnet-qa` | ask for it (a skill) | one-pass QA skill instead |
 | Phase-gated refactor loop with a design approval gate | `/dotnet-refactor` | `/dotnet-refactor` | ask for it (a skill) | — |
@@ -76,7 +76,7 @@ Download the latest archive from the [releases page](https://github.com/Metalnib
 
 ```bash
 # Linux / macOS
-tar -xzf dotnet-episteme-skills-1.8.0.tar.gz
+tar -xzf dotnet-episteme-skills-1.8.1.tar.gz
 cp -R skills/* ~/.claude/skills/          # Claude Code (skills only, no plugin extras)
 cp -R skills/* ~/.config/opencode/skill/  # OpenCode
 cp -R skills/* ~/.agents/skills/          # OpenAI Codex
@@ -85,7 +85,7 @@ cp -R skills/* ~/.agents/skills/          # OpenAI Codex
 
 ```powershell
 # Windows
-Expand-Archive dotnet-episteme-skills-1.8.0.zip .
+Expand-Archive dotnet-episteme-skills-1.8.1.zip .
 Copy-Item -Recurse skills\* "$env:USERPROFILE\.claude\skills\"
 ```
 
@@ -139,7 +139,7 @@ The review covers correctness (exception safety, CancellationToken propagation, 
 
 Two modes are available. Standard is the default - balanced coverage of correctness, maintainability, and risk. Cynical/Adversarial mode assumes defects exist until disproven, generates at least five failure hypotheses, and validates each with evidence before reporting. Use it when the code is on a critical path or when you want the hardest possible challenge.
 
-With the plugin installed, `/dotnet-review [target] [--cynical] [--model tier]` (fully: `/dotnet-episteme-skills:dotnet-review`) upgrades this to a multi-agent pipeline. Five reviewers run in parallel, each in a fresh isolated context: correctness/API, performance/AOT, security/observability, data/messaging/HTTP-integration, plus a generalist that hunts what falls between the lanes. Then an adversarial maintainer re-verifies every finding and refutes the ones that don't survive scrutiny, per [maintainer-playbook.md](skills/dotnet-techne-code-review/references/maintainer-playbook.md).
+With the plugin installed, `/dotnet-review [target] [--cynical] [--model tier]` (fully: `/dotnet-episteme-skills:dotnet-review`) upgrades this to a multi-agent pipeline. Up to five reviewers run in parallel, each in a fresh isolated context: correctness/API, performance/AOT, security/observability, data/messaging/HTTP-integration, plus a generalist that hunts what falls between the lanes. Then an adversarial maintainer re-verifies every finding and refutes the ones that don't survive scrutiny, per [maintainer-playbook.md](skills/dotnet-techne-code-review/references/maintainer-playbook.md).
 
 The orchestration is a bundled [dynamic workflow](workflows/dotnet-review.js): a deterministic script that scales the reviewer model to the size of the change and keeps raw findings out of your conversation. It runs slower than the single-context skill path - isolated reviewers and adversarial verification buy more thorough, run-to-run-consistent results in exchange for the time. `bash scripts/install-workflow.sh` optionally installs it as a native `/dotnet-review` command. On other tools the same playbook runs as a single-context falsification pass.
 
@@ -360,8 +360,8 @@ Version is defined once in `src/synopsis/Directory.Build.props` and flows into t
    ```
 5. Tag and push - CI builds all 6 binaries, runs the test suite, and publishes the GitHub release:
    ```bash
-   git tag v1.8.0
-   git push origin main v1.8.0
+   git tag v1.8.1
+   git push origin main v1.8.1
    ```
 6. After the release, check the install paths once: `/plugin marketplace add Metalnib/dotnet-episteme-skills` (Claude Code), `codex plugin marketplace add Metalnib/dotnet-episteme-skills` (Codex), and `scripts/install-opencode.sh` from a fresh clone (OpenCode).
 

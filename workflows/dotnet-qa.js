@@ -4,27 +4,32 @@ export const meta = {
   description: 'Not a command - this is the engine /dotnet-qa starts under the hood; type /dotnet-qa to run a story QA. It runs the scout, the 3 QA lanes in parallel (acceptance vs spec, reuse/design, dead code), the maintainer falsification, and computes the gate.',
   whenToUse: 'Invoked by the /dotnet-qa command after it resolved the spec - not standalone (spec discovery needs the user). Pass args {target, base?, specPack?, practicesPack?, model?, pluginRoot?}.',
   phases: [
-    { title: 'Scope', detail: 'scout captures the story diff vs the merge-base' },
+    { title: 'Scope', detail: 'scout resolves the merge-base and the changed files; script builds the diff command' },
     { title: 'Audit', detail: '3 QA lanes in parallel: acceptance (spec mode), reuse/design, dead code' },
     { title: 'Verify', detail: 'maintainer falsification, then the deterministic gate' },
   ],
 }
 
-// version: 1.8.0 (keep in sync with plugin.json; installer prints this line)
+// version: 1.8.1 (keep in sync with plugin.json; installer prints this line)
 const input = typeof args === 'string' ? JSON.parse(args) : (args ?? {})
 const target = input.target ?? 'current branch'
 const noSpec = !input.specPack
 
 // ─── Schemas ───
+// No diff field: the QA workers produce the diff themselves from the command the
+// script assembles below, so its tens of thousands of tokens never pass through a
+// model's output on the one serial phase. Deleted from properties, not just from
+// required - left in place a scout keeps filling it.
 const SCOPE_SCHEMA = {
-  type: 'object', required: ['repoRoot', 'base', 'files', 'locChanged', 'summary', 'diff'],
+  type: 'object', required: ['repoRoot', 'baseRef', 'leftSha', 'rightSha', 'files', 'secretPaths', 'summary'],
   properties: {
     repoRoot: { type: 'string' },
-    base: { type: 'string' },
+    baseRef: { type: 'string', description: 'symbolic name of the base the merge-base came from, e.g. origin/main' },
+    leftSha: { type: 'string', description: 'the merge-base, a full hex SHA' },
+    rightSha: { type: 'string', description: 'the target tip, a full hex SHA' },
     files: { type: 'array', maxItems: 300, items: { type: 'string' } },
-    locChanged: { type: 'integer' },
+    secretPaths: { type: 'array', maxItems: 40, items: { type: 'string' } },
     summary: { type: 'string' },
-    diff: { type: 'string' },
   },
 }
 const FINDING_PROPS = {
@@ -40,6 +45,10 @@ const FINDING_PROPS = {
 const FINDINGS_SCHEMA = {
   type: 'object', required: ['findings'],
   properties: {
+    // The diff is a command the lane has to run, and the guard only ever denies -
+    // without this field a lane whose command was blocked can only answer with an
+    // empty findings list, which reads as a clean lane.
+    laneFailed: { type: 'boolean' },
     findings: {
       type: 'array', maxItems: 30,
       items: { type: 'object', required: Object.keys(FINDING_PROPS), properties: FINDING_PROPS },
@@ -63,6 +72,7 @@ const ACCEPTANCE_SCHEMA = {
       },
     },
     findings: FINDINGS_SCHEMA.properties.findings,
+    laneFailed: FINDINGS_SCHEMA.properties.laneFailed,
   },
 }
 const VERDICTS_SCHEMA = {
@@ -91,6 +101,49 @@ const VERDICTS_SCHEMA = {
   },
 }
 
+// ─── Diff command assembly (keep in sync with workflows/dotnet-review.js) ───
+// The script owns this syntax, never the model: an unquoted space turns the tail
+// into a second POSITIVE pathspec, and a cwd-relative exclusion silently lets the
+// excluded files back into the diff. The flags neutralize local git config that
+// would otherwise break a worker's output - diff.external replaces unified output,
+// diff.noprefix breaks path parsing, diff.relative returns an EMPTY diff when the
+// worker's cwd subtree is untouched. `git -c` is not available: the guard hook at
+// hooks/git-readonly-guard.sh admits -C only, so every flag is per-subcommand.
+const GIT_DIFF = 'git diff --no-ext-diff --no-color --no-relative --ignore-submodules=none --src-prefix=a/ --dst-prefix=b/'
+const sha = v => String(v ?? '').trim().toLowerCase()
+// Full length only. A 7-char hex string can be a branch name, and git resolves the
+// ref, so a short SHA silently un-pins the diff instead of failing loudly.
+const isSha = v => /^[0-9a-f]{40,64}$/.test(sha(v))
+// The guard scans the raw command string, quotes included, so a path that reads as
+// one of git's write flags gets the whole command rejected for every worker.
+const readsAsFlag = s => /(^|\s)(-o|--output|--no-index)(\s|=|$)/.test(s)
+// A path carrying a shell operator cannot be quoted into the command at all - the
+// guard rejects the whole command on one such character - so widen it instead of
+// dropping the exclusion. '?' and not '*': it matches the original character for
+// character, so the file stays excluded and only same-length siblings go with it,
+// where '*' also crosses directory boundaries. Brackets have to go too, because
+// inside a [...] class a wildcard is just a literal member and the exclusion
+// silently stops matching the file it names.
+const widen = p => {
+  const w = p.replace(/[;&|<>`$'\\[\]\r\n]/g, '?')
+  return readsAsFlag(w) ? w.replace(/\s/g, '?') : w
+}
+// The same name patterns the scout is given, as a code-side floor under its answer:
+// a scout that misses or misspells one cannot un-withhold a file the code can see.
+// Content-based secrets (a config carrying a connection string) stay its job.
+const isSecretName = p => /(^|\/)(\.env|credentials|secrets)[^/]*$/i.test(p) || /\.(env|pem|key|pfx|p12)$/i.test(p)
+// EF whole-model snapshots run to tens of thousands of lines nobody reads, so they
+// are excluded for every worker. The migration's own .cs stays visible to all.
+const isEfSnapshot = p => /ModelSnapshot\.cs$/i.test(p) || (/\.Designer\.cs$/i.test(p) && p.split('/').includes('Migrations'))
+// icase on the always tier: pathspec matching is byte-exact, so a secret path the
+// scout spelled with the wrong case would otherwise keep its content in every diff.
+const excludeSpec = (p, icase) => `:(top,exclude${icase ? ',icase' : ''})${p}`
+// ':/' is the repository root. `-- .` would silently narrow the diff to the
+// worker's own subtree, so when there is nothing to exclude the clause is dropped.
+const diffCmd = (endpoints, specs) => specs.length ? `${GIT_DIFF} ${endpoints} -- ':/' ${specs.map(x => `'${x}'`).join(' ')}` : `${GIT_DIFF} ${endpoints}`
+// QA keeps tests and ordinary generated files in every lane, so it needs only the
+// always tier: secret content and EF snapshots.
+
 // ─── Paths ───
 const reviewRefs = input.pluginRoot
   ? `${input.pluginRoot}/skills/dotnet-techne-code-review/references`
@@ -106,18 +159,38 @@ const qaFalsification = input.pluginRoot
 phase('Scope')
 const scope = await agent(
   `You are scoping a story QA run. Target: ${target}. Work read-only (git, file reads).
+Read as much as you need. Emit NO diff content: your answer carries resolved SHAs and file lists, never hunks and never a shell command. The QA lanes produce the diff themselves from a command this script assembles out of your SHAs, so a diff typed here is pure waste on the one phase nothing else runs beside.
 Determine and return per the schema:
 - repoRoot (absolute path).
-- base: ${input.base ? `use ${input.base}` : 'the merge-base of the target with the default branch (git merge-base HEAD origin/HEAD or main/master)'}.
-- files: every file the story changed (base...target), and locChanged (git diff --shortstat additions+deletions). If more than 300 files changed, list the 300 most story-relevant and state the true total in the summary - never truncate silently.
+- baseRef: ${input.base ? `${input.base}` : 'the base you compared against - the default branch (origin/HEAD, or main/master)'}.
+- leftSha: the merge-base of the target with that base (git merge-base). rightSha: the target tip (git rev-parse). Both FULL hex SHAs, never ref names - a ref re-resolves per lane, so a commit landing mid-run would give two lanes different views.
+- files: every file the story changed between those two SHAs, repository-root-relative. If more than 300 files changed, list the 300 most story-relevant and state the true total in the summary - never truncate silently.
+- secretPaths: changed paths whose content must stay out of the lanes' diffs - .env* and *.env, *.pem, *.key, *.pfx, *.p12, credentials*, secrets*, and any appsettings/config file you see carrying a connection string, API key or token. Name them; never quote their content.
 - summary: what the story changes, max 10 lines.
-- diff: the unified diff base...target. Up to ~1500 lines include it verbatim; above that, include full hunks for non-test source files and per-file summaries (path + what changed) for tests and generated code. NEVER include the content of likely-secret files (.env*, *.pem, *.key, credentials*, secrets*, or config files containing connection strings or tokens) - list them by name and note the exclusion in the summary.
-If there is nothing to review, return an empty files array and an empty diff.`,
-  { label: 'scout', effort: 'low', schema: SCOPE_SCHEMA },
+If there is nothing to review, return an empty files array.`,
+  { label: 'scout', model: 'sonnet', effort: 'medium', schema: SCOPE_SCHEMA },
 )
-if (!scope || scope.files.length === 0) {
+if (!scope) {
+  return { halted: true, reason: `The scout returned no usable scope for target: ${target}. Re-run the QA.` }
+}
+if (scope.files.length === 0) {
   return { halted: true, reason: `Nothing to QA for target: ${target}` }
 }
+
+// ─── The diff command the QA lanes run themselves ───
+if (!isSha(scope.leftSha) || !isSha(scope.rightSha)) {
+  return { halted: true, reason: `The scout did not resolve "${target}" to commit SHAs (leftSha="${scope.leftSha}", rightSha="${scope.rightSha}"). The lanes build the diff from pinned SHAs and there is no safe fallback - a single endpoint silently folds in local edits, and a ref name can carry characters the git guard rejects. Re-run the QA.` }
+}
+const base = sha(scope.leftSha)
+// Withheld from every lane and never trimmed: keeping secret content out is a
+// guarantee, not an optimization, and one surviving snapshot floods every lane.
+const secretPaths = [...new Set([...(scope.secretPaths ?? []), ...scope.files.filter(isSecretName)])]
+const efSnapshots = scope.files.filter(isEfSnapshot)
+const always = [...new Set([...secretPaths, ...efSnapshots])]
+const widenedExclusions = always.filter(p => widen(p) !== p).map(p => `${p} -> ${widen(p)}`)
+const diffCommand = diffCmd(`${base} ${sha(scope.rightSha)}`, always.map(p => excludeSpec(widen(p), true)))
+const baseLabel = `${scope.baseRef || 'the default branch'} (${base.slice(0, 8)})`
+if (widenedExclusions.length) log(`Exclusion widened to a wildcard: ${widenedExclusions.join(', ')}`)
 
 // No runtime model sizing: every lane inherits the session model - the
 // session tier is enough for these validations, and auto-escalating to
@@ -125,20 +198,36 @@ if (!scope || scope.files.length === 0) {
 const tier = input.model ?? 'inherit'
 const modelOpt = tier === 'inherit' ? {} : { model: tier }
 if (input.model) log(`Model tier: ${tier} (--model override)`)
+// No size ladder here, for the same reason there is no model sizing: the session
+// tier is enough for these validations. --effort is the explicit override.
+const EFFORT_STEPS = ['low', 'medium', 'high', 'xhigh', 'max']
+const askedEffort = String(input.effort ?? '').trim().toLowerCase()
+if (askedEffort && !EFFORT_STEPS.includes(askedEffort)) log(`WARNING: ignoring effort "${input.effort}" - expected one of ${EFFORT_STEPS.join(', ')}`)
+const effortOpt = EFFORT_STEPS.includes(askedEffort) ? { effort: askedEffort } : {}
+if (effortOpt.effort) log(`Reasoning effort: ${effortOpt.effort} (--effort override)`)
 
 // ─── Phase: Audit ───
 phase('Audit')
-const common = `Repo root: ${scope.repoRoot}. Story target: ${target} (base: ${scope.base}).
+const withheld = [
+  secretPaths.length ? `Secret-classified paths, changed with their content withheld from your diff:\n${secretPaths.join('\n')}\nWithheld means not pushed into every lane's context by default, not off limits: Read one when your lane needs it. A changed secret path is itself reportable - a credential this story commits is a finding. Being unable to see one is not: state it as an uncertainty, never as a finding, and never as a blocking one. If withholding leaves your diff empty, that is a valid result, not a failed command.` : '',
+  efSnapshots.length ? `EF whole-model snapshots are excluded from every lane's diff, the migration's own .cs is not: ${efSnapshots.join(', ')}` : '',
+  widenedExclusions.length ? `These exclusions had to be widened to a wildcard, so a same-length neighbour may be missing from your diff: ${widenedExclusions.join(', ')}` : '',
+].filter(Boolean).join('\n')
+
+const common = `Repo root: ${scope.repoRoot}. Story target: ${target} (base: ${baseLabel}).
 Story summary: ${scope.summary}
-The diff below is your primary material. Explore further whenever you judge it necessary - Read/Grep/Glob, plus read-only git via Bash (a plugin hook blocks everything else). Every finding needs file:line evidence. Report nothing outside your lane.
-Changed files:\n${scope.files.join('\n')}
-Diff:\n${scope.diff}`
+Produce your primary material FIRST, by running exactly this read-only command through Bash:
+${diffCommand}
+Run it verbatim. The flags neutralize local git config that would otherwise mangle or empty the output, and the pathspecs are what scopes your diff - do not rewrite the command, do not drop pathspecs, do not fall back to a plain diff of the target. If it is blocked or fails, set laneFailed true in your answer and say what happened; never return an empty findings list from a diff you could not read, and never substitute your own diff command.
+Then explore further whenever you judge it necessary. Your Bash allows read-only git (diff, log, show, blame, status, rev-parse, merge-base), the synopsis CLI, and the read-only search and list tools (rg, grep, fd, find, ls, cat, head, tail, wc) on paths inside the project. Shell operators, pipes and redirection are blocked, as is each tool's own write or exec flag, so keep every command a single plain invocation. The command above is already anchored to the repository root, so do not add a -C option to it. Every finding needs file:line evidence. Report nothing outside your lane.
+${withheld ? `${withheld}\n` : ''}Changed files:\n${scope.files.join('\n')}`
 
 const LANES = [
   ...(noSpec ? [] : [{
     name: 'acceptance',
     schema: ACCEPTANCE_SCHEMA,
-    prompt: `Spec pack (the story's contract - verify the implementation against it):\n${input.specPack}\n${common}`,
+    prompt: `Spec pack (the story's contract - verify the implementation against it):\n${input.specPack}
+When an AC's only evidence sits in a file whose content was withheld from your diff and you did not open it, verdict PARTIAL and state the uncertainty - never MISSING. MISSING gates the run FAIL, which would fail a correct implementation over our own redaction.\n${common}`,
   }]),
   {
     name: 'reuse-design',
@@ -155,11 +244,12 @@ For graph evidence use Synopsis per your agent definition: load the MCP tools vi
 if (noSpec) log('No-spec mode (no spec pack passed): acceptance lane skipped')
 
 const rawResults = await parallel(LANES.map(l => () =>
-  agent(l.prompt, { agentType: `dotnet-episteme-skills:qa:${l.name}`, label: `qa:${l.name}`, phase: 'Audit', schema: l.schema, ...modelOpt })))
+  agent(l.prompt, { agentType: `dotnet-episteme-skills:qa:${l.name}`, label: `qa:${l.name}`, phase: 'Audit', schema: l.schema, ...modelOpt, ...effortOpt })))
 
-const lanesFailed = LANES.filter((l, i) => !rawResults[i]).map(l => l.name)
+// A lane that could not produce its diff is a failed lane, not a clean one.
+const lanesFailed = LANES.filter((l, i) => !rawResults[i] || rawResults[i].laneFailed).map(l => l.name)
 if (lanesFailed.length === LANES.length) {
-  return { halted: true, reason: `All QA lanes failed to launch (${lanesFailed.join(', ')}). Is the dotnet-episteme-skills plugin installed and enabled?` }
+  return { halted: true, reason: `Every QA lane failed (${lanesFailed.join(', ')}) - they either did not launch or could not run their diff command. Check that the dotnet-episteme-skills plugin is installed and enabled, and that Bash git commands are permitted for its worker agents.` }
 }
 if (lanesFailed.length > 0) log(`WARNING: lanes failed, the QA is partial: ${lanesFailed.join(', ')}`)
 
@@ -198,10 +288,13 @@ ${input.specPack}`
 The acceptance lane's per-criterion verdicts follow. Challenge any verdict whose cited evidence does not hold when you read the code - a false IMPLEMENTED is the dangerous one, it passes a story that was not built. Return challenges in acDisputes (AC id + file:line-backed rationale). You never rewrite the table; a dispute is advisory and gates CONCERNS.
 AC coverage: ${JSON.stringify(acCoverage)}`
   const res = await agent(
-    `Repo root: ${scope.repoRoot}. QA target: ${target} (base: ${scope.base}). Story summary: ${scope.summary}${specBlock}
+    `Repo root: ${scope.repoRoot}. QA target: ${target} (base: ${baseLabel}). Story summary: ${scope.summary}${specBlock}
+The change itself is one read-only command away - run it verbatim through Bash when you need the diff:
+${diffCommand}
+${withheld ? `${withheld}\n` : ''}If that command is blocked or fails, say so in every rationale and keep the findings; never REFUTE one for lack of evidence you could not go and get.
 Apply the maintainer playbook at ${reviewRefs}/maintainer-playbook.md and the QA falsification counter-arguments at ${qaFalsification} in full. REFUTED requires concrete file:line evidence of a guard/test/design intent, a covering ticket, or an established convention. A finding that gets WORSE under your check is UPGRADED (set newSeverity) - those are the most valuable verdicts.
 Re-verify every finding in this list and return one verdict per index:\n${JSON.stringify(numbered)}${acBlock}`,
-    { agentType: 'dotnet-episteme-skills:review:maintainer', label: 'maintainer', phase: 'Verify', schema: VERDICTS_SCHEMA, ...modelOpt },
+    { agentType: 'dotnet-episteme-skills:review:maintainer', label: 'maintainer', phase: 'Verify', schema: VERDICTS_SCHEMA, ...modelOpt, ...effortOpt },
   )
   maintainerFailed = !res
   acDisputes = res?.acDisputes ?? []
@@ -244,4 +337,4 @@ const verdictLine = noSpec
   : met === acCoverage.length ? `All ${acCoverage.length} ACs met.`
   : `${met} of ${acCoverage.length} ACs met.`
 
-return { gate, verdictLine, acSummary: { met, total: acCoverage.length, counts }, noSpec, tier, scope: scope.summary, base: scope.base, acCoverage, acDisputes, findings, refuted, lanesFailed, maintainerFailed }
+return { gate, verdictLine, acSummary: { met, total: acCoverage.length, counts }, noSpec, tier, effort: effortOpt.effort ?? 'session default', scope: scope.summary, base, baseRef: scope.baseRef, baseLabel, acCoverage, acDisputes, findings, refuted, lanesFailed, maintainerFailed }

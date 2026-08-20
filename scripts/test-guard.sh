@@ -123,7 +123,16 @@ t "refactor lane: find without exec allowed" "$CARTOGRAPHER" "find src -name '*.
 t "refactor lane: find -delete blocked" "$CARTOGRAPHER" "find src -name '*.cs' -delete" 2
 t "refactor lane: find -exec blocked" "$CARTOGRAPHER" "find src -name '*.cs' -exec rm {} +" 2
 t "refactor lane: curl still blocked" "dotnet-episteme-skills:refactor:surveyor" "curl http://example.com" 2
-t "review lane: rg still blocked" "$REVIEWER" "rg 'pattern' src/" 2
+t "review lane: rg allowed (read-only search)" "$REVIEWER" "rg 'pattern' src/" 0
+t "review lane: rg --pre still blocked" "$REVIEWER" "rg --pre ./x.sh pattern src/" 2
+t "review lane: absolute path inside the project allowed" "$REVIEWER" "rg 'pattern' $REPO_ROOT/workflows" 0 "$REPO_ROOT"
+t "review lane: absolute path blocked when the project dir is unknown" "$REVIEWER" "rg 'pattern' $REPO_ROOT/workflows" 2
+t "review lane: absolute path outside the project blocked" "$REVIEWER" "rg 'pattern' /etc" 2
+t "review lane: parent escape still blocked" "$REVIEWER" "rg 'pattern' ../other-repo" 2
+t "review lane: rg with a shell operator still blocked" "$REVIEWER" "rg 'pattern' src/ | head -5" 2
+t "review lane: curl still blocked" "$REVIEWER" "curl http://example.com" 2
+t "qa lane: grep allowed (read-only search)" "$QA_ACCEPTANCE" "grep -rn 'pattern' src/" 0
+t "qa lane: find -delete still blocked" "$QA_ACCEPTANCE" "find src -name '*.cs' -delete" 2
 t "qa lane: git log allowed" "$QA_ACCEPTANCE" "git log --oneline -3" 0
 t "qa lane: git merge-base allowed" "$QA_ACCEPTANCE" "git merge-base HEAD origin/main" 0
 t "refactor lane: git rev-parse allowed" "$CARTOGRAPHER" "git rev-parse --show-toplevel" 0

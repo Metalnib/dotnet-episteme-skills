@@ -30,6 +30,25 @@ Glob tools, read with Read. Synopsis MCP tools stay available (load via ToolSear
    feature-flag remnants, guard branches no producer can trigger anymore, DI registrations
    nothing resolves. Verify with a solution-wide search (including tests) before claiming dead;
    a member only tests reference is a finding too (test-only liveness), stated as such.
+
+   Grep alone fails asymmetrically here: a name mentioned in a comment or on an unrelated type
+   reads as a live reference, so genuinely dead code survives. Escalate opportunistically, best
+   source first, and state in the finding which source produced the evidence:
+
+   1. **Rider MCP** (`mcp__rider__get_project_problems`, `get_file_problems`, `analyze_calls`) -
+      it reads a solution Rider already compiled and holds in memory, so there is no build and
+      no cold start, and ReSharper flags unused public members, never-instantiated classes and
+      never-used methods, which the compiler does not.
+   2. Any other MCP server exposing analyzer diagnostics.
+   3. LSP references and the incoming call hierarchy, if the tool is exposed in the session.
+   4. Grep, as the floor.
+
+   These sources lie in ways this codebase hits constantly, so "no references" is evidence, never
+   a verdict: a class registered through `AddScoped<IFoo, Foo>()` has one reference and is alive;
+   a DTO property read only by System.Text.Json has zero and removing it breaks the wire; EF
+   entity properties behave the same; and a public member consumed by another repository has zero
+   references in this solution, which is Synopsis' question (`cross_repo_edges`,
+   `package_dependents`), not the analyzer's.
 3. **Stale words**: XML summaries, doc files, log message texts, comments, and test names on
    the changed paths that describe behavior which no longer exists. A test named for the old
    behavior that still passes is a finding.

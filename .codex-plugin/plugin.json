@@ -1,6 +1,6 @@
 {
   "name": "dotnet-episteme-skills",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Production-tested .NET skills for code review, dependency analysis, API design, concurrency, and performance, plus the Synopsis dependency-graph MCP server.",
   "author": {
     "name": "Metalnib",

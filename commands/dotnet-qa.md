@@ -1,6 +1,6 @@
 ---
 description: Story QA - multi-agent verification of a story implementation against its spec: per-AC verdicts, code reuse and design conformance, dead code, then adversarial maintainer verification. Finds the spec by explicit path, ticket key in the branch name, or plan files - and asks rather than guessing. Verdict persists to .episteme/QA-<slug>.md.
-argument-hint: "[ticket|branch|--spec <path>] [--base <branch>] [--model sonnet|opus|fable] e.g. YB-1234 or --spec docs/specs/foo.md"
+argument-hint: "[ticket|branch|--spec <path>] [--base <branch>] [--model sonnet|opus|fable] [--effort low|medium|high|xhigh|max] e.g. YB-1234 or --spec docs/specs/foo.md"
 ---
 
 # /dotnet-qa — story QA against the spec
@@ -52,19 +52,23 @@ Workflow({
     specPack: "<the spec pack, or omit in no-spec mode>",
     practicesPack: "<the practices pack or omit>",
     model: "<only if --model was passed>",
+    effort: "<only if --effort was passed>",
     pluginRoot: "${CLAUDE_PLUGIN_ROOT}"
   }
 })
 ```
 
-The script does everything: a scout captures the story diff, the three QA lanes run in parallel
+The script does everything: a scout resolves the story to two pinned commit SHAs and the changed
+files (it emits no diff text - each lane produces the diff itself from a read-only `git diff`
+command the script assembles), the three QA lanes run in parallel
 (acceptance is skipped in no-spec mode - the script logs it; degradation is announced, never
 silent), findings are deduped in code, and the review maintainer falsifies them against the
 maintainer playbook plus the QA falsification counter-arguments - it also challenges AC
 verdicts whose evidence does not hold (advisory `acDisputes`; the table is never rewritten) and
 may upgrade a finding that got worse under its check. A failed maintainer gates CONCERNS, never
 a silent PASS. Intermediate findings never enter this conversation - you receive
-`{gate, verdictLine, acSummary, acCoverage, acDisputes, findings, refuted, lanesFailed, maintainerFailed, noSpec}`.
+`{gate, verdictLine, acSummary, acCoverage, acDisputes, findings, refuted, lanesFailed, maintainerFailed, noSpec, base, baseRef, baseLabel}`.
+`baseLabel` is the readable form of the pinned base (`origin/main (a1b2c3d4)`) - use it wherever the report names the diff scope.
 
 When it returns, run the suite (Step 4b) and go to Step 5.
 

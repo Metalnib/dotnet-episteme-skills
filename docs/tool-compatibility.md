@@ -5,7 +5,8 @@ The 11 skills follow the [Agent Skills](https://agentskills.io/specification) st
 | Capability | Claude Code | OpenAI Codex | OpenCode | pi |
 |---|---|---|---|---|
 | The 11 `dotnet-techne-*` skills | plugin install | plugin install, or point `.agents/skills/` at them | plugin install, or point `.opencode/skills/` at them | add the skills folder in pi's settings |
-| Review with 5 reviewers + maintainer | `/dotnet-review` | ask for it (the `dotnet-techne-review-pipeline` skill) | `/dotnet-review` | not available — one-pass review skill instead |
+| Review with up to 5 reviewers + maintainer | `/dotnet-review` | ask for it (the `dotnet-techne-review-pipeline` skill) | `/dotnet-review` | not available — one-pass review skill instead |
+| Reviewer model tier and reasoning effort scale with the change size | yes, in `workflows/dotnet-review.js` | no — one fixed tier per role, set at install time | no — `task` takes no per-call model or effort; register `-strong` variants instead | not available |
 | Story QA vs the spec (3 lanes + maintainer) | `/dotnet-qa` | ask for it (the `dotnet-techne-qa-pipeline` skill) | `/dotnet-qa` | one-pass `dotnet-techne-story-qa` skill instead |
 | Phase-gated refactor loop | `/dotnet-refactor` (+ state reload after /clear or compaction) | ask for it (the `dotnet-techne-refactor-pipeline` skill; re-read the state file yourself) | `/dotnet-refactor` (re-read the state file yourself) | not available |
 | Workers cannot change files | guard hook | read-only sandbox per role | read-only permissions per subagent | not enforced |
